@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:archive/archive.dart';
 import 'package:path/path.dart' as p;
 import 'package:permission_handler/permission_handler.dart';
 import '../models/file_item.dart';
@@ -339,5 +340,66 @@ class FileService {
       return cLow == pLow || cLow.startsWith('$pLow\\') || cLow.startsWith('$pLow/');
     }
     return normChild == normParent || normChild.startsWith('$normParent/');
+  }
+
+  /// Creates a new directory in [parentDirectory].
+  static Future<void> createFolder(String parentDirectory, String name) async {
+    final trimmed = name.trim();
+    final valErr = validateFileName(trimmed);
+    if (valErr != null) {
+      throw InvalidNameException(valErr);
+    }
+
+    final hasConflict = await checkNameConflict(parentDirectory, trimmed);
+    if (hasConflict) {
+      throw NameConflictException(trimmed);
+    }
+
+    final targetPath = p.join(parentDirectory, trimmed);
+    final dir = Directory(targetPath);
+    await dir.create(recursive: false);
+  }
+
+  /// Creates a new empty file in [parentDirectory].
+  static Future<void> createFile(String parentDirectory, String name) async {
+    final trimmed = name.trim();
+    final valErr = validateFileName(trimmed);
+    if (valErr != null) {
+      throw InvalidNameException(valErr);
+    }
+
+    final hasConflict = await checkNameConflict(parentDirectory, trimmed);
+    if (hasConflict) {
+      throw NameConflictException(trimmed);
+    }
+
+    final targetPath = p.join(parentDirectory, trimmed);
+    final file = File(targetPath);
+    await file.create(recursive: false);
+  }
+
+  /// Creates a new valid empty ZIP archive in [parentDirectory].
+  static Future<String> createEmptyZip(String parentDirectory, String name) async {
+    var trimmed = name.trim();
+    if (!trimmed.toLowerCase().endsWith('.zip')) {
+      trimmed = '$trimmed.zip';
+    }
+
+    final valErr = validateFileName(trimmed);
+    if (valErr != null) {
+      throw InvalidNameException(valErr);
+    }
+
+    final hasConflict = await checkNameConflict(parentDirectory, trimmed);
+    if (hasConflict) {
+      throw NameConflictException(trimmed);
+    }
+
+    final targetPath = p.join(parentDirectory, trimmed);
+    final archive = Archive();
+    final bytes = ZipEncoder().encode(archive);
+    final file = File(targetPath);
+    await file.writeAsBytes(bytes ?? <int>[]);
+    return trimmed;
   }
 }
