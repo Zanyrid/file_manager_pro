@@ -76,11 +76,16 @@ class HomeScreen extends ConsumerWidget {
   }
 
   void _handlePaste(BuildContext context, WidgetRef ref, ClipboardState clipboard, String? currentPath) {
+    final messenger = ScaffoldMessenger.of(context);
+
     if (currentPath == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.clearSnackBars();
+      messenger.showSnackBar(
         const SnackBar(
           content: Text('Cannot paste: invalid destination directory.'),
           backgroundColor: Color(0xFFDC2626),
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 4),
         ),
       );
       return;
@@ -89,16 +94,34 @@ class HomeScreen extends ConsumerWidget {
     final bubbleIndex = ref.read(selectedBubbleIndexProvider);
     final bubbleType = bubbleTypes[bubbleIndex];
     if (FileService.requiresShizuku(bubbleType)) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.clearSnackBars();
+      messenger.showSnackBar(
         const SnackBar(
           content: Text('Cannot paste: Android/data and obb require Shizuku (Phase 4).'),
           backgroundColor: Color(0xFFDC2626),
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 4),
         ),
       );
       return;
     }
 
     if (clipboard.isCut) {
+      final allInSameFolder = clipboard.paths.every(
+        (src) => FileService.isSamePath(p.dirname(src), currentPath),
+      );
+      if (allInSameFolder) {
+        messenger.clearSnackBars();
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('Already in this folder. Nothing to move.'),
+            behavior: SnackBarBehavior.floating,
+            duration: Duration(seconds: 4),
+          ),
+        );
+        return;
+      }
+
       ref.read(operationNotifierProvider.notifier).startMove(
             sourcePaths: clipboard.paths,
             destinationDir: currentPath,

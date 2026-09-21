@@ -65,19 +65,61 @@ class _TerminalPanelState extends ConsumerState<TerminalPanel> {
     }
   }
 
-  Color _getStatusColor(OperationStatus status) {
-    switch (status) {
-      case OperationStatus.running:
-        return const Color(0xFF3B82F6);
-      case OperationStatus.done:
-        return const Color(0xFF22C55E);
-      case OperationStatus.error:
-        return const Color(0xFFEF4444);
-      case OperationStatus.cancelled:
-        return const Color(0xFFF59E0B);
-      case OperationStatus.idle:
-        return const Color(0xFF71717A);
+  String _getStatusPillText(OperationState opState) {
+    if (opState.isRunning) return 'RUNNING';
+    if (opState.status == OperationStatus.cancelled) return 'CANCELLED';
+    final summary = opState.summary;
+    if (summary != null) {
+      if (summary.failed > 0) return 'COMPLETED WITH ERRORS';
+      if (summary.succeeded > 0) return 'DONE';
+      return 'NOTHING DONE';
     }
+    return opState.status == OperationStatus.done ? 'DONE' : opState.status.name.toUpperCase();
+  }
+
+  Color _getStatusColor(OperationState opState) {
+    if (opState.isRunning) return const Color(0xFF3B82F6);
+    if (opState.status == OperationStatus.cancelled) return const Color(0xFFF59E0B);
+    final summary = opState.summary;
+    if (summary != null) {
+      if (summary.failed > 0) return const Color(0xFFEF4444);
+      if (summary.succeeded > 0) return const Color(0xFF22C55E);
+      return const Color(0xFFF59E0B);
+    }
+    if (opState.status == OperationStatus.done) return const Color(0xFF22C55E);
+    if (opState.status == OperationStatus.error) return const Color(0xFFEF4444);
+    return const Color(0xFF71717A);
+  }
+
+  String _getFooterStatusText(OperationState opState) {
+    if (opState.status == OperationStatus.cancelled) {
+      return 'Operation cancelled by user.';
+    }
+    final summary = opState.summary;
+    if (summary == null) {
+      return opState.status == OperationStatus.done
+          ? 'Done.'
+          : 'Operation finished.';
+    }
+
+    if (summary.failed > 0) {
+      return 'Completed with errors: ${summary.failed} failed, ${summary.succeeded} processed.';
+    }
+
+    if (summary.succeeded > 0) {
+      return 'Done: ${summary.succeeded} item(s) processed.';
+    }
+
+    if (summary.skipped > 0) {
+      return 'Nothing done: all ${summary.skipped} item(s) skipped.';
+    }
+    if (opState.type == OperationType.extract) {
+      return 'Nothing done: invalid or empty archive.';
+    }
+    if (opState.type == OperationType.compress) {
+      return 'Nothing done: no files found to compress.';
+    }
+    return 'Nothing done: no items processed.';
   }
 
   @override
@@ -126,17 +168,17 @@ class _TerminalPanelState extends ConsumerState<TerminalPanel> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
-                        color: _getStatusColor(opState.status).withAlpha(40),
+                        color: _getStatusColor(opState).withAlpha(40),
                         borderRadius: BorderRadius.circular(4),
                         border: Border.all(
-                          color: _getStatusColor(opState.status),
+                          color: _getStatusColor(opState),
                           width: 1,
                         ),
                       ),
                       child: Text(
-                        opState.status.name.toUpperCase(),
+                        _getStatusPillText(opState),
                         style: TextStyle(
-                          color: _getStatusColor(opState.status),
+                          color: _getStatusColor(opState),
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
                         ),
@@ -255,34 +297,15 @@ class _TerminalPanelState extends ConsumerState<TerminalPanel> {
                 children: [
                   Expanded(
                     child: Text(
-                      opState.status == OperationStatus.cancelled
-                          ? 'Operation cancelled.'
-                          : opState.type == OperationType.extract && opState.summary != null
-                              ? opState.summary!.succeeded > 0 && opState.summary!.failed == 0
-                                  ? 'Operation completed successfully.'
-                                  : opState.summary!.failed > 0 && opState.summary!.succeeded > 0
-                                      ? 'Completed with errors: ${opState.summary!.failed} failed, ${opState.summary!.succeeded} extracted.'
-                                      : opState.summary!.succeeded == 0 && opState.summary!.skipped > 0
-                                          ? 'Nothing extracted (all ${opState.summary!.skipped} item(s) skipped).'
-                                          : opState.summary!.succeeded == 0
-                                              ? 'Nothing extracted: not a valid ZIP file or corrupted archive.'
-                                              : 'Operation finished with errors.'
-                              : opState.type == OperationType.compress && opState.summary != null
-                                  ? opState.summary!.succeeded > 0 && opState.summary!.failed == 0
-                                      ? 'ZIP created successfully.'
-                                      : opState.summary!.failed > 0 && opState.summary!.succeeded > 0
-                                          ? 'ZIP created with errors: ${opState.summary!.failed} failed, ${opState.summary!.succeeded} compressed.'
-                                          : 'Compression failed.'
-                                  : opState.status == OperationStatus.done
-                                      ? 'Operation completed successfully.'
-                                      : 'Operation finished with errors.',
+                      _getFooterStatusText(opState),
                       style: TextStyle(
-                        color: _getStatusColor(opState.status),
+                        color: _getStatusColor(opState),
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
                   ),
+
                   ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF3B82F6),

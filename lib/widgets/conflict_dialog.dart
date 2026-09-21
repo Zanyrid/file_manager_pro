@@ -6,12 +6,14 @@ class ConflictDialog extends StatefulWidget {
   final String sourcePath;
   final String targetPath;
   final bool isDirectory;
+  final bool hideReplace;
 
   const ConflictDialog({
     super.key,
     required this.sourcePath,
     required this.targetPath,
     required this.isDirectory,
+    this.hideReplace = false,
   });
 
   static Future<ConflictResolutionResult?> show(
@@ -19,6 +21,7 @@ class ConflictDialog extends StatefulWidget {
     required String sourcePath,
     required String targetPath,
     required bool isDirectory,
+    bool hideReplace = false,
   }) {
     return showDialog<ConflictResolutionResult>(
       context: context,
@@ -27,6 +30,7 @@ class ConflictDialog extends StatefulWidget {
         sourcePath: sourcePath,
         targetPath: targetPath,
         isDirectory: isDirectory,
+        hideReplace: hideReplace,
       ),
     );
   }
@@ -60,7 +64,9 @@ class _ConflictDialogState extends State<ConflictDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'A $entityType named "$fileName" already exists in the destination.',
+            widget.hideReplace
+                ? 'A $entityType named "$fileName" already exists here. Create a copy?'
+                : 'A $entityType named "$fileName" already exists in the destination.',
             style: const TextStyle(color: Color(0xFFD4D4D8), fontSize: 13, height: 1.4),
           ),
           const SizedBox(height: 16),
@@ -110,22 +116,23 @@ class _ConflictDialogState extends State<ConflictDialog> {
           },
           child: const Text('Keep Both', style: TextStyle(color: Color(0xFF3B82F6))),
         ),
-        ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFFEF4444),
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        if (!widget.hideReplace)
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFEF4444),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            ),
+            onPressed: () {
+              Navigator.of(context).pop(
+                ConflictResolutionResult(
+                  action: ConflictAction.replace,
+                  applyToAll: _applyToAll,
+                ),
+              );
+            },
+            child: const Text('Replace'),
           ),
-          onPressed: () {
-            Navigator.of(context).pop(
-              ConflictResolutionResult(
-                action: ConflictAction.replace,
-                applyToAll: _applyToAll,
-              ),
-            );
-          },
-          child: const Text('Replace'),
-        ),
       ],
     );
   }

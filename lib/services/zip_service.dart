@@ -552,6 +552,14 @@ void _zipWorker(SendPort mainSendPort) {
             continue;
           }
 
+          // Safety check: never extract over the source archive
+          if (FileService.isSamePath(zipPath, targetPath)) {
+            sendLog('> [ABORT] Cannot extract entry over source archive ($targetPath).', LogLevel.warning);
+            skipped++;
+            sendProgress(entriesDone / totalEntries, entryName, bytesDone, totalUncompressedBytes);
+            continue;
+          }
+
           // 7. Stream file extraction using OutputFileStream
           sendLog('> Extracting: $entryName ($entrySizeFormatted)', LogLevel.info);
           currentWritingPath = targetPath;
@@ -620,7 +628,7 @@ void _zipWorker(SendPort mainSendPort) {
         );
 
         sendLog(
-          '> Summary: ${summary.succeeded} extracted, ${summary.skipped} skipped, ${summary.failed} failed.',
+          '> Summary: ${summary.succeeded} processed / ${summary.skipped} skipped / ${summary.failed} failed.',
           (summary.failed == 0 && summary.succeeded > 0) ? LogLevel.success : LogLevel.warning,
         );
 
@@ -832,7 +840,7 @@ void _compressWorker(SendPort mainSendPort) {
         );
 
         sendLog(
-          '> Summary: ${summary.succeeded} compressed, ${summary.failed} failed.',
+          '> Summary: ${summary.succeeded} processed / ${summary.skipped} skipped / ${summary.failed} failed.',
           (summary.failed == 0 && summary.succeeded > 0) ? LogLevel.success : LogLevel.warning,
         );
 

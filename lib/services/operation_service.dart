@@ -31,8 +31,9 @@ class CancellationToken {
 typedef ConflictHandler = Future<ConflictResolutionResult> Function(
   String sourcePath,
   String targetPath,
-  bool isDirectory,
-);
+  bool isDirectory, {
+  bool hideReplace,
+});
 
 typedef LogCallback = void Function(LogEntry entry);
 typedef ProgressCallback = void Function(double progress, String currentItem, int bytesDone, int totalBytes);
@@ -108,7 +109,9 @@ class OperationService {
         final isDir = type == FileSystemEntityType.directory;
 
         // Block copying folder into itself or its own subfolder
-        if (isDir && FileService.isSubfolder(src, destinationDir)) {
+        // (but NOT same-folder copy — that's handled as a name conflict)
+        if (isDir && FileService.isSubfolder(src, destinationDir)
+            && !FileService.isSamePath(p.dirname(src), destinationDir)) {
           onLog(LogEntry(
             '[ERROR] Cannot copy folder "$srcName" into itself or its own subfolder ($destinationDir).',
             level: LogLevel.error,
@@ -117,17 +120,22 @@ class OperationService {
           continue;
         }
 
+        // Detect same-folder copy: source parent == destination
+        final isSameFolder = FileService.isSamePath(p.dirname(src), destinationDir);
+
         String targetName = srcName;
         final targetPath = p.join(destinationDir, targetName);
 
-        // Check for conflict
-        final hasConflict = await FileService.checkNameConflict(destinationDir, targetName);
+        // Check for conflict (same-folder copy always has a conflict; use hideReplace)
+        final hasConflict = isSameFolder
+            ? true
+            : await FileService.checkNameConflict(destinationDir, targetName);
         if (hasConflict) {
           ConflictResolutionResult resolution;
           if (globalConflictResult != null && globalConflictResult.applyToAll) {
             resolution = globalConflictResult;
           } else {
-            resolution = await onConflict(src, targetPath, isDir);
+            resolution = await onConflict(src, targetPath, isDir, hideReplace: isSameFolder);
             if (resolution.applyToAll) {
               globalConflictResult = resolution;
             }
@@ -148,6 +156,16 @@ class OperationService {
         }
 
         final finalTargetPath = p.join(destinationDir, targetName);
+
+        // Safety check: abort only if the FINAL resolved target still equals the source
+        if (FileService.isSamePath(src, finalTargetPath)) {
+          onLog(LogEntry(
+            '> [ABORT] Source and target path are identical after conflict resolution: $src',
+            level: LogLevel.warning,
+          ));
+          skipped++;
+          continue;
+        }
 
         if (isDir) {
           final res = await _copyDirectoryRecursive(
@@ -207,7 +225,7 @@ class OperationService {
     );
 
     onLog(LogEntry(
-      '> Summary: ${summary.succeeded} succeeded, ${summary.skipped} skipped, ${summary.failed} failed.',
+      '> Summary: ${summary.succeeded} processed / ${summary.skipped} skipped / ${summary.failed} failed.',
       level: summary.failed == 0 ? LogLevel.success : LogLevel.warning,
     ));
 
@@ -272,7 +290,10 @@ class OperationService {
 
         // Check if moving to exact same location
         if (FileService.isSamePath(src, targetPath)) {
-          onLog(LogEntry('> Skipped: $srcName (source and destination are the same)', level: LogLevel.warning));
+          onLog(LogEntry(
+            '> [ABORT] Source and target path are identical: $src',
+            level: LogLevel.warning,
+          ));
           skipped++;
           continue;
         }
@@ -284,7 +305,7 @@ class OperationService {
           if (globalConflictResult != null && globalConflictResult.applyToAll) {
             resolution = globalConflictResult;
           } else {
-            resolution = await onConflict(src, targetPath, isDir);
+            resolution = await onConflict(src, targetPath, isDir, hideReplace: false);
             if (resolution.applyToAll) {
               globalConflictResult = resolution;
             }
@@ -384,7 +405,7 @@ class OperationService {
     );
 
     onLog(LogEntry(
-      '> Summary: ${summary.succeeded} succeeded, ${summary.skipped} skipped, ${summary.failed} failed.',
+      '> Summary: ${summary.succeeded} processed / ${summary.skipped} skipped / ${summary.failed} failed.',
       level: summary.failed == 0 ? LogLevel.success : LogLevel.warning,
     ));
 
@@ -434,7 +455,7 @@ class OperationService {
     );
 
     onLog(LogEntry(
-      '> Summary: ${summary.succeeded} deleted, ${summary.failed} failed.',
+      '> Summary: ${summary.succeeded} processed / ${summary.skipped} skipped / ${summary.failed} failed.',
       level: summary.failed == 0 ? LogLevel.success : LogLevel.warning,
     ));
 

@@ -144,7 +144,7 @@ class OperationNotifier extends StateNotifier<OperationState> {
         sourcePaths: sourcePaths,
         destinationDir: destinationDir,
         cancellationToken: cancelToken,
-        onConflict: (src, target, isDir) async {
+        onConflict: (src, target, isDir, {bool hideReplace = false}) async {
           if (!context.mounted) {
             return const ConflictResolutionResult(action: ConflictAction.skip);
           }
@@ -153,6 +153,7 @@ class OperationNotifier extends StateNotifier<OperationState> {
             sourcePath: src,
             targetPath: target,
             isDirectory: isDir,
+            hideReplace: hideReplace,
           );
           return res ?? const ConflictResolutionResult(action: ConflictAction.skip);
         },
@@ -167,9 +168,14 @@ class OperationNotifier extends StateNotifier<OperationState> {
         },
       );
 
-      final finalStatus = cancelToken.isCancelled
-          ? OperationStatus.cancelled
-          : (summary.failed > 0 ? OperationStatus.error : OperationStatus.done);
+      final OperationStatus finalStatus;
+      if (cancelToken.isCancelled) {
+        finalStatus = OperationStatus.cancelled;
+      } else if (summary.succeeded > 0 && summary.failed == 0) {
+        finalStatus = OperationStatus.done;
+      } else {
+        finalStatus = OperationStatus.error;
+      }
 
       state = state.copyWith(
         status: finalStatus,
@@ -208,7 +214,7 @@ class OperationNotifier extends StateNotifier<OperationState> {
         sourcePaths: sourcePaths,
         destinationDir: destinationDir,
         cancellationToken: cancelToken,
-        onConflict: (src, target, isDir) async {
+        onConflict: (src, target, isDir, {bool hideReplace = false}) async {
           if (!context.mounted) {
             return const ConflictResolutionResult(action: ConflictAction.skip);
           }
@@ -231,9 +237,14 @@ class OperationNotifier extends StateNotifier<OperationState> {
         },
       );
 
-      final finalStatus = cancelToken.isCancelled
-          ? OperationStatus.cancelled
-          : (summary.failed > 0 ? OperationStatus.error : OperationStatus.done);
+      final OperationStatus finalStatus;
+      if (cancelToken.isCancelled) {
+        finalStatus = OperationStatus.cancelled;
+      } else if (summary.succeeded > 0 && summary.failed == 0) {
+        finalStatus = OperationStatus.done;
+      } else {
+        finalStatus = OperationStatus.error;
+      }
 
       state = state.copyWith(
         status: finalStatus,
@@ -241,8 +252,8 @@ class OperationNotifier extends StateNotifier<OperationState> {
         progress: 1.0,
       );
 
-      // If cut was successful, clear clipboard
-      if (!cancelToken.isCancelled && summary.failed == 0) {
+      // If move was successful, clear clipboard
+      if (!cancelToken.isCancelled && summary.failed == 0 && summary.succeeded > 0) {
         ref.read(clipboardProvider.notifier).clear();
       }
 
@@ -288,9 +299,14 @@ class OperationNotifier extends StateNotifier<OperationState> {
         },
       );
 
-      final finalStatus = cancelToken.isCancelled
-          ? OperationStatus.cancelled
-          : (summary.failed > 0 ? OperationStatus.error : OperationStatus.done);
+      final OperationStatus finalStatus;
+      if (cancelToken.isCancelled) {
+        finalStatus = OperationStatus.cancelled;
+      } else if (summary.succeeded > 0 && summary.failed == 0) {
+        finalStatus = OperationStatus.done;
+      } else {
+        finalStatus = OperationStatus.error;
+      }
 
       state = state.copyWith(
         status: finalStatus,
@@ -347,12 +363,9 @@ class OperationNotifier extends StateNotifier<OperationState> {
       final OperationStatus finalStatus;
       if (cancelToken.isCancelled) {
         finalStatus = OperationStatus.cancelled;
-      } else if (summary.failed > 0) {
-        finalStatus = OperationStatus.error;
-      } else if (summary.succeeded > 0) {
+      } else if (summary.succeeded > 0 && summary.failed == 0) {
         finalStatus = OperationStatus.done;
       } else {
-        // Nothing extracted (all skipped, or invalid archive)
         finalStatus = OperationStatus.error;
       }
 
@@ -412,9 +425,7 @@ class OperationNotifier extends StateNotifier<OperationState> {
       final OperationStatus finalStatus;
       if (cancelToken.isCancelled) {
         finalStatus = OperationStatus.cancelled;
-      } else if (summary.failed > 0 && summary.succeeded == 0) {
-        finalStatus = OperationStatus.error;
-      } else if (summary.succeeded > 0) {
+      } else if (summary.succeeded > 0 && summary.failed == 0) {
         finalStatus = OperationStatus.done;
       } else {
         finalStatus = OperationStatus.error;
