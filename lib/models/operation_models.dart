@@ -52,6 +52,8 @@ enum OperationType {
   copy,
   move,
   delete,
+  extract,
+  compress,
 }
 
 enum OperationStatus {

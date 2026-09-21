@@ -4,6 +4,8 @@ import '../models/file_item.dart';
 import '../services/file_service.dart';
 import '../state/app_state.dart';
 import '../state/operation_state.dart';
+import 'package:path/path.dart' as p;
+import 'extract_destination_dialog.dart';
 
 class FileListPanel extends ConsumerWidget {
   const FileListPanel({super.key});
@@ -502,13 +504,35 @@ class FileListPanel extends ConsumerWidget {
                             _showDeleteDialog(context, ref, [file.path]);
                           } else if (action == 'select') {
                             ref.read(selectedFilesProvider.notifier).toggle(file.path);
+                          } else if (action == 'extract') {
+                            final currentDir = ref.read(currentPathProvider) ?? p.dirname(file.path);
+                            ExtractDestinationDialog.show(
+                              context,
+                              ref,
+                              zipPath: file.path,
+                              currentDirectory: currentDir,
+                            );
                           }
                         },
-                        itemBuilder: (context) => [
-                          const PopupMenuItem(
-                            value: 'select',
-                            height: 36,
-                            child: Row(
+                        itemBuilder: (context) {
+                          final isZip = file.name.toLowerCase().endsWith('.zip');
+                          return [
+                            if (isZip)
+                              const PopupMenuItem(
+                                value: 'extract',
+                                height: 36,
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.folder_zip_outlined, size: 16, color: Color(0xFFFFA726)),
+                                    SizedBox(width: 8),
+                                    Text('Extract ZIP', style: TextStyle(color: Color(0xFFEDEDED), fontSize: 13)),
+                                  ],
+                                ),
+                              ),
+                            const PopupMenuItem(
+                              value: 'select',
+                              height: 36,
+                              child: Row(
                               children: [
                                 Icon(Icons.check_box_outlined, size: 16, color: Color(0xFFA1A1AA)),
                                 SizedBox(width: 8),
@@ -560,8 +584,9 @@ class FileListPanel extends ConsumerWidget {
                               ],
                             ),
                           ),
-                        ],
-                      ),
+                        ];
+                      },
+                    ),
                   ],
                 ),
                 onTap: () {
@@ -570,6 +595,14 @@ class FileListPanel extends ConsumerWidget {
                   } else {
                     if (file.isDirectory) {
                       ref.read(currentPathProvider.notifier).setPath(file.path);
+                    } else if (file.name.toLowerCase().endsWith('.zip')) {
+                      final currentDir = ref.read(currentPathProvider) ?? p.dirname(file.path);
+                      ExtractDestinationDialog.show(
+                        context,
+                        ref,
+                        zipPath: file.path,
+                        currentDirectory: currentDir,
+                      );
                     }
                   }
                 },

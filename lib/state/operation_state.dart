@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/operation_models.dart';
 import '../services/operation_service.dart';
+import '../services/zip_service.dart';
 import '../widgets/conflict_dialog.dart';
 import 'app_state.dart';
 
@@ -303,4 +304,136 @@ class OperationNotifier extends StateNotifier<OperationState> {
       state = state.copyWith(status: OperationStatus.error);
     }
   }
+
+  Future<void> startExtractZip({
+    required String zipPath,
+    required String destinationDir,
+    Map<String, ConflictAction> conflictMap = const {},
+  }) async {
+    if (state.isRunning) return;
+
+    final cancelToken = CancellationToken();
+    state = OperationState(
+      type: OperationType.extract,
+      status: OperationStatus.running,
+      progress: 0.0,
+      isTerminalOpen: true,
+      cancellationToken: cancelToken,
+      logs: [],
+    );
+
+    // Clear selection
+    ref.read(selectedFilesProvider.notifier).clear();
+
+    _addLog(LogEntry('=== STARTING ZIP EXTRACTION ===', level: LogLevel.info));
+
+    try {
+      final summary = await ZipService.extractZip(
+        zipPath: zipPath,
+        destinationDir: destinationDir,
+        conflictMap: conflictMap,
+        cancellationToken: cancelToken,
+        onLog: _addLog,
+        onProgress: (prog, item, bytesDone, totalBytes) {
+          state = state.copyWith(
+            progress: prog,
+            currentItem: item,
+            bytesDone: bytesDone,
+            totalBytes: totalBytes,
+          );
+        },
+      );
+
+      final OperationStatus finalStatus;
+      if (cancelToken.isCancelled) {
+        finalStatus = OperationStatus.cancelled;
+      } else if (summary.failed > 0) {
+        finalStatus = OperationStatus.error;
+      } else if (summary.succeeded > 0) {
+        finalStatus = OperationStatus.done;
+      } else {
+        // Nothing extracted (all skipped, or invalid archive)
+        finalStatus = OperationStatus.error;
+      }
+
+      state = state.copyWith(
+        status: finalStatus,
+        summary: summary,
+        progress: 1.0,
+      );
+
+      _addLog(LogEntry('=== EXTRACTION FINISHED ===', level: LogLevel.info));
+    } catch (e) {
+      _addLog(LogEntry('[ERROR] Unhandled extraction exception: $e', level: LogLevel.error));
+      state = state.copyWith(
+        status: OperationStatus.error,
+        summary: const OperationSummary(total: 0, succeeded: 0, skipped: 0, failed: 1),
+      );
+    }
+  }
+
+  Future<void> startCompressZip({
+    required List<String> sourcePaths,
+    required String outputZipPath,
+  }) async {
+    if (state.isRunning) return;
+
+    final cancelToken = CancellationToken();
+    state = OperationState(
+      type: OperationType.compress,
+      status: OperationStatus.running,
+      progress: 0.0,
+      isTerminalOpen: true,
+      cancellationToken: cancelToken,
+      logs: [],
+    );
+
+    // Clear selection
+    ref.read(selectedFilesProvider.notifier).clear();
+
+    _addLog(LogEntry('=== STARTING ZIP COMPRESSION ===', level: LogLevel.info));
+
+    try {
+      final summary = await ZipService.compressToZip(
+        sourcePaths: sourcePaths,
+        outputZipPath: outputZipPath,
+        cancellationToken: cancelToken,
+        onLog: _addLog,
+        onProgress: (prog, item, bytesDone, totalBytes) {
+          state = state.copyWith(
+            progress: prog,
+            currentItem: item,
+            bytesDone: bytesDone,
+            totalBytes: totalBytes,
+          );
+        },
+      );
+
+      final OperationStatus finalStatus;
+      if (cancelToken.isCancelled) {
+        finalStatus = OperationStatus.cancelled;
+      } else if (summary.failed > 0 && summary.succeeded == 0) {
+        finalStatus = OperationStatus.error;
+      } else if (summary.succeeded > 0) {
+        finalStatus = OperationStatus.done;
+      } else {
+        finalStatus = OperationStatus.error;
+      }
+
+      state = state.copyWith(
+        status: finalStatus,
+        summary: summary,
+        progress: 1.0,
+      );
+
+      _addLog(LogEntry('=== COMPRESSION FINISHED ===', level: LogLevel.info));
+    } catch (e) {
+      _addLog(LogEntry('[ERROR] Unhandled compression exception: $e', level: LogLevel.error));
+      state = state.copyWith(
+        status: OperationStatus.error,
+        summary: const OperationSummary(total: 0, succeeded: 0, skipped: 0, failed: 1),
+      );
+    }
+  }
 }
+

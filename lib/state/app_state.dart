@@ -209,6 +209,16 @@ class SelectedFilesNotifier extends StateNotifier<Set<String>> {
     state = Set.from(allPaths);
   }
 
+  void invertSelection(List<String> allPaths) {
+    final inverted = <String>{};
+    for (final path in allPaths) {
+      if (!state.contains(path)) {
+        inverted.add(path);
+      }
+    }
+    state = inverted;
+  }
+
   void clear() {
     state = {};
   }

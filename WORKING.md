@@ -7,7 +7,8 @@ Flutter Android file manager. Split-screen: left bubble menu (no text), right fi
 - Phase 1 (static UI): done
 - Phase 2 (real browsing, rename, delete): done, tested on Windows
 - Phase 3A (copy/move/delete + terminal log): done, tested on Windows
-- Phase 3B (ZIP extraction): in progress
+- Phase 3B (ZIP extraction): done
+- Phase 3C (selection actions, ZIP compression, batch extraction): done
 - Next: Search, Phase 4 (Shizuku), Phase 5 (interactive terminal + Termux), Settings last
 
 ## Structure

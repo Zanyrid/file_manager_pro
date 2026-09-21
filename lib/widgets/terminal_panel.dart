@@ -56,6 +56,10 @@ class _TerminalPanelState extends ConsumerState<TerminalPanel> {
         return 'Move Operation';
       case OperationType.delete:
         return 'Delete Operation';
+      case OperationType.extract:
+        return 'ZIP Extraction';
+      case OperationType.compress:
+        return 'ZIP Compression';
       case null:
         return 'Terminal Logs';
     }
@@ -251,11 +255,27 @@ class _TerminalPanelState extends ConsumerState<TerminalPanel> {
                 children: [
                   Expanded(
                     child: Text(
-                      opState.status == OperationStatus.done
-                          ? 'Operation completed successfully.'
-                          : opState.status == OperationStatus.cancelled
-                              ? 'Operation cancelled.'
-                              : 'Operation finished with errors.',
+                      opState.status == OperationStatus.cancelled
+                          ? 'Operation cancelled.'
+                          : opState.type == OperationType.extract && opState.summary != null
+                              ? opState.summary!.succeeded > 0 && opState.summary!.failed == 0
+                                  ? 'Operation completed successfully.'
+                                  : opState.summary!.failed > 0 && opState.summary!.succeeded > 0
+                                      ? 'Completed with errors: ${opState.summary!.failed} failed, ${opState.summary!.succeeded} extracted.'
+                                      : opState.summary!.succeeded == 0 && opState.summary!.skipped > 0
+                                          ? 'Nothing extracted (all ${opState.summary!.skipped} item(s) skipped).'
+                                          : opState.summary!.succeeded == 0
+                                              ? 'Nothing extracted: not a valid ZIP file or corrupted archive.'
+                                              : 'Operation finished with errors.'
+                              : opState.type == OperationType.compress && opState.summary != null
+                                  ? opState.summary!.succeeded > 0 && opState.summary!.failed == 0
+                                      ? 'ZIP created successfully.'
+                                      : opState.summary!.failed > 0 && opState.summary!.succeeded > 0
+                                          ? 'ZIP created with errors: ${opState.summary!.failed} failed, ${opState.summary!.succeeded} compressed.'
+                                          : 'Compression failed.'
+                                  : opState.status == OperationStatus.done
+                                      ? 'Operation completed successfully.'
+                                      : 'Operation finished with errors.',
                       style: TextStyle(
                         color: _getStatusColor(opState.status),
                         fontSize: 12,

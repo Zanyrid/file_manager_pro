@@ -8,9 +8,23 @@ import 'file_service.dart';
 class CancellationToken {
   bool _isCancelled = false;
   bool get isCancelled => _isCancelled;
+  final List<void Function()> _listeners = [];
+
+  void addListener(void Function() listener) {
+    if (_isCancelled) {
+      listener();
+    } else {
+      _listeners.add(listener);
+    }
+  }
 
   void cancel() {
-    _isCancelled = true;
+    if (!_isCancelled) {
+      _isCancelled = true;
+      for (final listener in _listeners) {
+        listener();
+      }
+    }
   }
 }
 
