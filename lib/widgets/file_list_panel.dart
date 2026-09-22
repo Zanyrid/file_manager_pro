@@ -6,6 +6,7 @@ import '../state/app_state.dart';
 import '../state/operation_state.dart';
 import 'package:path/path.dart' as p;
 import 'extract_destination_dialog.dart';
+import 'item_info_sheet.dart';
 
 class FileListPanel extends ConsumerWidget {
   const FileListPanel({super.key});
@@ -797,6 +798,8 @@ class FileListPanel extends ConsumerWidget {
                               _showDeleteDialog(context, ref, [file.path]);
                             } else if (action == 'select') {
                               ref.read(selectedFilesProvider.notifier).toggle(file.path);
+                            } else if (action == 'info') {
+                              ItemInfoSheet.show(context, [file.path]);
                             } else if (action == 'extract') {
                               final currentDir = ref.read(currentPathProvider) ?? p.dirname(file.path);
                               ExtractDestinationDialog.show(
@@ -830,6 +833,17 @@ class FileListPanel extends ConsumerWidget {
                                     Icon(Icons.check_box_outlined, size: 16, color: Color(0xFFA1A1AA)),
                                     SizedBox(width: 8),
                                     Text('Select', style: TextStyle(color: Color(0xFFEDEDED), fontSize: 13)),
+                                  ],
+                                ),
+                              ),
+                              const PopupMenuItem(
+                                value: 'info',
+                                height: 36,
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.info_outline_rounded, size: 16, color: Color(0xFF8BC34A)),
+                                    SizedBox(width: 8),
+                                    Text('Details', style: TextStyle(color: Color(0xFFEDEDED), fontSize: 13)),
                                   ],
                                 ),
                               ),

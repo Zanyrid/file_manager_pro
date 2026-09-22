@@ -10,6 +10,7 @@ import '../widgets/bubble_menu.dart';
 import '../widgets/conflict_dialog.dart';
 import '../widgets/extract_destination_dialog.dart';
 import '../widgets/file_list_panel.dart';
+import '../widgets/item_info_sheet.dart';
 import '../widgets/terminal_panel.dart';
 
 class HomeScreen extends ConsumerWidget {
@@ -503,6 +504,14 @@ class HomeScreen extends ConsumerWidget {
                           duration: const Duration(seconds: 2),
                         ),
                       );
+                    },
+                  ),
+                    IconButton(
+                    icon: const Icon(Icons.info_outline_rounded, size: 20),
+                    color: const Color(0xFF8BC34A),
+                    tooltip: 'Item information',
+                    onPressed: () {
+                      ItemInfoSheet.show(context, selectedFiles.toList());
                     },
                   ),
                   // More options menu: Select All, Invert Selection

@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 import 'package:archive/archive.dart';
 import 'package:path/path.dart' as p;
 import 'package:permission_handler/permission_handler.dart';
 import '../models/file_item.dart';
+import 'operation_service.dart' show CancellationToken;
 
 enum BubbleType {
   root,
@@ -413,4 +416,386 @@ class FileService {
       rethrow;
     }
   }
+
+  /// Formats byte count to human-readable string (KB, MB, GB).
+  static String formatBytes(int bytes) {
+    if (bytes <= 0) return '0 B';
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) {
+      return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    }
+    if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+  }
+
+  /// Formats byte count with commas (e.g. 1,234,567).
+  static String formatExactBytes(int bytes) {
+    final str = bytes.toString();
+    final buffer = StringBuffer();
+    int count = 0;
+    for (int i = str.length - 1; i >= 0; i--) {
+      buffer.write(str[i]);
+      count++;
+      if (count % 3 == 0 && i > 0) {
+        buffer.write(',');
+      }
+    }
+    return buffer.toString().split('').reversed.join('');
+  }
+
+  /// Formats DateTime to full format: yyyy-MM-dd HH:mm:ss.
+  static String formatDateTimeFull(DateTime dt) {
+    final y = dt.year.toString().padLeft(4, '0');
+    final m = dt.month.toString().padLeft(2, '0');
+    final d = dt.day.toString().padLeft(2, '0');
+    final hh = dt.hour.toString().padLeft(2, '0');
+    final mm = dt.minute.toString().padLeft(2, '0');
+    final ss = dt.second.toString().padLeft(2, '0');
+    return '$y-$m-$d $hh:$mm:$ss';
+  }
+
+  /// Resolves MIME type for a given path or directory.
+  static String getMimeType(String path, {bool isDirectory = false}) {
+    if (isDirectory) return 'inode/directory';
+    final ext = p.extension(path).toLowerCase().replaceAll('.', '');
+    if (ext.isEmpty) return 'application/octet-stream';
+    switch (ext) {
+      // Images
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'png':
+        return 'image/png';
+      case 'gif':
+        return 'image/gif';
+      case 'webp':
+        return 'image/webp';
+      case 'bmp':
+        return 'image/bmp';
+      case 'svg':
+        return 'image/svg+xml';
+      case 'ico':
+        return 'image/x-icon';
+      case 'heic':
+        return 'image/heic';
+      case 'tiff':
+      case 'tif':
+        return 'image/tiff';
+
+      // Audio
+      case 'mp3':
+        return 'audio/mpeg';
+      case 'wav':
+        return 'audio/wav';
+      case 'flac':
+        return 'audio/flac';
+      case 'aac':
+        return 'audio/aac';
+      case 'ogg':
+      case 'oga':
+        return 'audio/ogg';
+      case 'm4a':
+        return 'audio/mp4';
+      case 'opus':
+        return 'audio/opus';
+
+      // Video
+      case 'mp4':
+        return 'video/mp4';
+      case 'mkv':
+        return 'video/x-matroska';
+      case 'webm':
+        return 'video/webm';
+      case 'avi':
+        return 'video/x-msvideo';
+      case 'mov':
+        return 'video/quicktime';
+      case '3gp':
+        return 'video/3gpp';
+      case 'ts':
+        return 'video/mp2t';
+
+      // Archives
+      case 'zip':
+        return 'application/zip';
+      case 'rar':
+        return 'application/x-rar-compressed';
+      case '7z':
+        return 'application/x-7z-compressed';
+      case 'tar':
+        return 'application/x-tar';
+      case 'gz':
+        return 'application/gzip';
+      case 'bz2':
+        return 'application/x-bzip2';
+      case 'xz':
+        return 'application/x-xz';
+      case 'apk':
+        return 'application/vnd.android.package-archive';
+
+      // Documents / Text
+      case 'pdf':
+        return 'application/pdf';
+      case 'txt':
+      case 'log':
+        return 'text/plain';
+      case 'doc':
+        return 'application/msword';
+      case 'docx':
+        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      case 'xls':
+        return 'application/vnd.ms-excel';
+      case 'xlsx':
+        return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      case 'ppt':
+        return 'application/vnd.ms-powerpoint';
+      case 'pptx':
+        return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+      case 'html':
+      case 'htm':
+        return 'text/html';
+      case 'css':
+        return 'text/css';
+      case 'js':
+        return 'text/javascript';
+      case 'json':
+        return 'application/json';
+      case 'xml':
+        return 'application/xml';
+      case 'csv':
+        return 'text/csv';
+      case 'md':
+        return 'text/markdown';
+      case 'dart':
+        return 'text/x-dart';
+      case 'c':
+      case 'cpp':
+      case 'h':
+        return 'text/x-c';
+      case 'py':
+        return 'text/x-python';
+      case 'sh':
+        return 'application/x-sh';
+
+      default:
+        return 'application/octet-stream';
+    }
+  }
+
+  /// Retrieves comprehensive metadata for an item at [path].
+  static Future<ItemMetadata> getItemMetadata(String path) async {
+    try {
+      final stat = await FileStat.stat(path);
+      final isDir = stat.type == FileSystemEntityType.directory;
+      final name = p.basename(path).isEmpty ? path : p.basename(path);
+      final parentFolder = p.dirname(path);
+      final ext = isDir ? '' : p.extension(path);
+      final mime = getMimeType(path, isDirectory: isDir);
+      final isHidden = name.startsWith('.');
+      final isReadOnly = (stat.mode & 0x92) == 0;
+      final perm = stat.modeString();
+
+      return ItemMetadata(
+        path: path,
+        name: name,
+        parentFolder: parentFolder,
+        isDirectory: isDir,
+        extension: ext,
+        mimeType: mime,
+        sizeBytes: stat.size,
+        sizeFormatted: isDir ? '--' : formatBytes(stat.size),
+        exactBytesFormatted: isDir ? '--' : '${formatExactBytes(stat.size)} bytes',
+        createdTime: stat.changed,
+        modifiedTime: stat.modified,
+        accessedTime: stat.accessed,
+        isReadOnly: isReadOnly,
+        isHidden: isHidden,
+        permissions: perm,
+        exists: stat.type != FileSystemEntityType.notFound,
+      );
+    } catch (e) {
+      final name = p.basename(path).isEmpty ? path : p.basename(path);
+      return ItemMetadata(
+        path: path,
+        name: name,
+        parentFolder: p.dirname(path),
+        isDirectory: false,
+        extension: p.extension(path),
+        mimeType: 'application/octet-stream',
+        sizeBytes: 0,
+        sizeFormatted: 'Error',
+        exactBytesFormatted: '0 bytes',
+        isReadOnly: false,
+        isHidden: name.startsWith('.'),
+        permissions: '---------',
+        exists: false,
+        error: e.toString(),
+      );
+    }
+  }
+
+  /// Calculates total size, file count, and subfolder count for [folderPath] recursively in an Isolate.
+  static Future<FolderStats?> calculateFolderStats(
+    String folderPath, {
+    CancellationToken? cancellationToken,
+  }) async {
+    final receivePort = ReceivePort();
+    final completer = Completer<FolderStats?>();
+    Isolate? isolate;
+
+    void cleanup() {
+      receivePort.close();
+      isolate?.kill(priority: Isolate.immediate);
+    }
+
+    cancellationToken?.addListener(() {
+      if (!completer.isCompleted) {
+        completer.complete(null);
+      }
+      cleanup();
+    });
+
+    receivePort.listen((message) {
+      if (message is SendPort) {
+        if (cancellationToken?.isCancelled == true) {
+          if (!completer.isCompleted) completer.complete(null);
+          cleanup();
+        } else {
+          message.send({'type': 'start', 'path': folderPath});
+        }
+      } else if (message is Map && message['type'] == 'done') {
+        final stats = FolderStats(
+          fileCount: message['fileCount'] as int,
+          subfolderCount: message['subfolderCount'] as int,
+          totalSizeBytes: message['totalSizeBytes'] as int,
+          unreadableItems: List<String>.from(message['unreadableItems'] as List),
+        );
+        if (!completer.isCompleted) {
+          completer.complete(stats);
+        }
+        cleanup();
+      }
+    });
+
+    try {
+      isolate = await Isolate.spawn(_folderStatsWorker, receivePort.sendPort);
+    } catch (e) {
+      cleanup();
+      if (!completer.isCompleted) completer.complete(null);
+    }
+
+    return completer.future;
+  }
 }
+
+/// Metadata model for a file or directory.
+class ItemMetadata {
+  final String path;
+  final String name;
+  final String parentFolder;
+  final bool isDirectory;
+  final String extension;
+  final String mimeType;
+  final int sizeBytes;
+  final String sizeFormatted;
+  final String exactBytesFormatted;
+  final DateTime? createdTime;
+  final DateTime? modifiedTime;
+  final DateTime? accessedTime;
+  final bool isReadOnly;
+  final bool isHidden;
+  final String permissions;
+  final bool exists;
+  final String? error;
+
+  const ItemMetadata({
+    required this.path,
+    required this.name,
+    required this.parentFolder,
+    required this.isDirectory,
+    required this.extension,
+    required this.mimeType,
+    required this.sizeBytes,
+    required this.sizeFormatted,
+    required this.exactBytesFormatted,
+    this.createdTime,
+    this.modifiedTime,
+    this.accessedTime,
+    required this.isReadOnly,
+    required this.isHidden,
+    required this.permissions,
+    this.exists = true,
+    this.error,
+  });
+}
+
+/// Recursive statistics model for a folder.
+class FolderStats {
+  final int fileCount;
+  final int subfolderCount;
+  final int totalSizeBytes;
+  final List<String> unreadableItems;
+
+  const FolderStats({
+    this.fileCount = 0,
+    this.subfolderCount = 0,
+    this.totalSizeBytes = 0,
+    this.unreadableItems = const [],
+  });
+}
+
+/// Top-level Isolate worker for recursively computing folder statistics.
+void _folderStatsWorker(SendPort mainSendPort) {
+  final receivePort = ReceivePort();
+  mainSendPort.send(receivePort.sendPort);
+
+  receivePort.listen((message) {
+    if (message is Map && message['type'] == 'start') {
+      final folderPath = message['path'] as String;
+      int fileCount = 0;
+      int subfolderCount = 0;
+      int totalBytes = 0;
+      final unreadable = <String>[];
+
+      void scanDirectory(Directory dir) {
+        try {
+          final entities = dir.listSync(followLinks: false);
+          for (final entity in entities) {
+            try {
+              if (entity is Directory) {
+                subfolderCount++;
+                scanDirectory(entity);
+              } else if (entity is File) {
+                fileCount++;
+                try {
+                  totalBytes += entity.lengthSync();
+                } catch (e) {
+                  unreadable.add('${entity.path} (cannot read size: $e)');
+                }
+              } else if (entity is Link) {
+                fileCount++;
+              }
+            } catch (e) {
+              unreadable.add('${entity.path} ($e)');
+            }
+          }
+        } catch (e) {
+          unreadable.add('${dir.path} (cannot access folder: $e)');
+        }
+      }
+
+      scanDirectory(Directory(folderPath));
+
+      mainSendPort.send({
+        'type': 'done',
+        'fileCount': fileCount,
+        'subfolderCount': subfolderCount,
+        'totalSizeBytes': totalBytes,
+        'unreadableItems': unreadable,
+      });
+    }
+  });
+}
+
