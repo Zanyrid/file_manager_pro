@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -253,6 +252,7 @@ class HomeScreen extends ConsumerWidget {
                               sourcePath: outputName,
                               targetPath: outputZipPath,
                               isDirectory: false,
+                              hideReplace: true,
                             );
 
                             if (res == null) {
@@ -273,14 +273,6 @@ class HomeScreen extends ConsumerWidget {
                             } else if (res.action == ConflictAction.keepBoth) {
                               outputName = await FileService.generateNonConflictingName(currentDir, outputName);
                               outputZipPath = p.join(currentDir, outputName);
-                            } else if (res.action == ConflictAction.replace) {
-                              // Delete existing file before creating new one
-                              try {
-                                final existing = File(outputZipPath);
-                                if (existing.existsSync()) {
-                                  existing.deleteSync();
-                                }
-                              } catch (_) {}
                             }
                           }
 

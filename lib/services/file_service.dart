@@ -396,10 +396,21 @@ class FileService {
     }
 
     final targetPath = p.join(parentDirectory, trimmed);
-    final archive = Archive();
-    final bytes = ZipEncoder().encode(archive);
-    final file = File(targetPath);
-    await file.writeAsBytes(bytes ?? <int>[]);
-    return trimmed;
+    final tempPath = p.join(parentDirectory, '.${trimmed}_${DateTime.now().microsecondsSinceEpoch}.tmp');
+    final tempFile = File(tempPath);
+    try {
+      final archive = Archive();
+      final bytes = ZipEncoder().encode(archive);
+      await tempFile.writeAsBytes(bytes);
+      await tempFile.rename(targetPath);
+      return trimmed;
+    } catch (_) {
+      if (await tempFile.exists()) {
+        try {
+          await tempFile.delete();
+        } catch (_) {}
+      }
+      rethrow;
+    }
   }
 }

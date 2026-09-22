@@ -671,17 +671,18 @@ void _compressWorker(SendPort mainSendPort) {
 
   /// Recursively collects all files from a list of source paths.
   /// Returns a list of (absolutePath, archiveRelativePath) pairs.
-  List<(String, String)> collectFiles(List<String> sourcePaths, String outputZipPath) {
+  List<(String, String)> collectFiles(List<String> sourcePaths, String outputZipPath, [String? tempZipPath]) {
     final result = <(String, String)>[];
     final outputCanonical = p.canonicalize(outputZipPath);
+    final tempCanonical = tempZipPath != null ? p.canonicalize(tempZipPath) : null;
 
     for (final srcPath in sourcePaths) {
       final srcCanonical = p.canonicalize(srcPath);
       final srcType = FileSystemEntity.typeSync(srcPath, followLinks: false);
 
       if (srcType == FileSystemEntityType.file) {
-        // Skip if this is the output zip itself
-        if (srcCanonical == outputCanonical) continue;
+        // Skip if this is the output zip itself or temp zip file
+        if (srcCanonical == outputCanonical || srcCanonical == tempCanonical) continue;
         final baseName = p.basename(srcPath);
         result.add((srcPath, baseName));
       } else if (srcType == FileSystemEntityType.directory) {
@@ -691,7 +692,7 @@ void _compressWorker(SendPort mainSendPort) {
           for (final entity in dir.listSync(recursive: true, followLinks: false)) {
             if (entity is File) {
               final entityCanonical = p.canonicalize(entity.path);
-              if (entityCanonical == outputCanonical) continue;
+              if (entityCanonical == outputCanonical || entityCanonical == tempCanonical) continue;
               final relativePath = p.relative(entity.path, from: srcPath);
               final archivePath = p.join(dirName, relativePath).replaceAll('\\', '/');
               result.add((entity.path, archivePath));
@@ -714,12 +715,17 @@ void _compressWorker(SendPort mainSendPort) {
         final sourcePaths = List<String>.from(message['sourcePaths'] as List);
         final outputZipPath = message['outputZipPath'] as String;
         final outputName = p.basename(outputZipPath);
+        final parentDir = p.dirname(outputZipPath);
+        final tempZipPath = p.join(
+          parentDir,
+          '.${p.basenameWithoutExtension(outputName)}_${DateTime.now().microsecondsSinceEpoch}.tmp.zip',
+        );
 
         sendLog('\$ compress ${sourcePaths.length} item(s) -> $outputName', LogLevel.command);
         sendLog('> Collecting files...', LogLevel.info);
 
         // 1. Collect all files to compress
-        final filesToCompress = collectFiles(sourcePaths, outputZipPath);
+        final filesToCompress = collectFiles(sourcePaths, outputZipPath, tempZipPath);
 
         if (filesToCompress.isEmpty) {
           sendLog('[ERROR] No files found to compress.', LogLevel.error);
@@ -743,16 +749,17 @@ void _compressWorker(SendPort mainSendPort) {
           } catch (_) {}
         }
 
-        // 3. Create zip using streaming
+        // 3. Create zip using streaming to a temporary file
         int succeeded = 0;
         int failed = 0;
         int bytesDone = 0;
+        bool writeSuccess = false;
 
         ZipFileEncoder? encoder;
 
         try {
           encoder = ZipFileEncoder();
-          encoder.create(outputZipPath);
+          encoder.create(tempZipPath);
 
           for (int i = 0; i < filesToCompress.length; i++) {
             if (isCancelled) {
@@ -790,39 +797,52 @@ void _compressWorker(SendPort mainSendPort) {
 
           encoder.close();
           encoder = null;
+
+          if (!isCancelled && succeeded > 0 && failed == 0) {
+            final tempFile = File(tempZipPath);
+            if (tempFile.existsSync()) {
+              try {
+                final targetFile = File(outputZipPath);
+                if (targetFile.existsSync()) {
+                  targetFile.deleteSync();
+                }
+                tempFile.renameSync(outputZipPath);
+                writeSuccess = true;
+              } catch (e) {
+                sendLog('[ERROR] Failed to finalize ZIP archive: $e', LogLevel.error);
+                failed += succeeded;
+                succeeded = 0;
+              }
+            } else {
+              sendLog('[ERROR] Temporary ZIP file was not created.', LogLevel.error);
+              failed += succeeded;
+              succeeded = 0;
+            }
+          } else if (!isCancelled && failed > 0) {
+            sendLog('[ERROR] Compression completed with errors. Original destination left untouched.', LogLevel.error);
+          }
         } catch (e) {
           sendLog('[ERROR] ZIP creation error: $e', LogLevel.error);
           try {
             encoder?.close();
           } catch (_) {}
-          // If cancelled or error with 0 success, remove partial zip
-          if (isCancelled || succeeded == 0) {
+          failed += (filesToCompress.length - succeeded - failed);
+        } finally {
+          // Clean up temp file on any failure or cancellation
+          if (!writeSuccess) {
             try {
-              final f = File(outputZipPath);
-              if (f.existsSync()) f.deleteSync();
+              final tmp = File(tempZipPath);
+              if (tmp.existsSync()) {
+                tmp.deleteSync();
+              }
             } catch (_) {}
-          }
-
-          if (succeeded == 0) {
-            mainSendPort.send({
-              'type': 'done',
-              'total': filesToCompress.length,
-              'succeeded': 0,
-              'skipped': 0,
-              'failed': filesToCompress.length,
-            });
-            return;
           }
         }
 
-        // If cancelled, remove partial zip
+        // If cancelled, report
         if (isCancelled) {
-          try {
-            final f = File(outputZipPath);
-            if (f.existsSync()) f.deleteSync();
-          } catch (_) {}
           sendLog('> Partial ZIP removed.', LogLevel.warning);
-        } else if (succeeded > 0) {
+        } else if (writeSuccess && succeeded > 0) {
           // Report output file size
           try {
             final outSize = File(outputZipPath).lengthSync();
