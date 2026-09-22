@@ -6,12 +6,14 @@ import '../models/operation_models.dart';
 import '../services/file_service.dart';
 import '../state/app_state.dart';
 import '../state/operation_state.dart';
+import '../state/view_options_state.dart';
 import '../widgets/bubble_menu.dart';
 import '../widgets/conflict_dialog.dart';
 import '../widgets/extract_destination_dialog.dart';
 import '../widgets/file_list_panel.dart';
 import '../widgets/item_info_sheet.dart';
 import '../widgets/terminal_panel.dart';
+import '../widgets/view_options_popup.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -404,10 +406,10 @@ class HomeScreen extends ConsumerWidget {
     final selectedFiles = ref.watch(selectedFilesProvider);
     final isSelectionMode = selectedFiles.isNotEmpty;
     final currentPath = ref.watch(currentPathProvider);
-    final fileListState = ref.watch(fileListNotifierProvider);
     final permissionGranted = ref.watch(permissionGrantedProvider);
     final clipboard = ref.watch(clipboardProvider);
     final operationState = ref.watch(operationNotifierProvider);
+    final displayedFiles = ref.watch(sortedFilteredFilesProvider);
 
     // Check if all selected are zips
     final allZips = selectedFiles.isNotEmpty &&
@@ -421,7 +423,7 @@ class HomeScreen extends ConsumerWidget {
           // Ctrl+A: Select all
           if (event.logicalKey == LogicalKeyboardKey.keyA &&
               HardwareKeyboard.instance.isControlPressed) {
-            final allPaths = fileListState.files.map((f) => f.path).toList();
+            final allPaths = displayedFiles.map((f) => f.path).toList();
             ref.read(selectedFilesProvider.notifier).selectAll(allPaths);
           }
         }
@@ -520,7 +522,7 @@ class HomeScreen extends ConsumerWidget {
                     color: const Color(0xFF1E1E24),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     onSelected: (action) {
-                      final allPaths = fileListState.files.map((f) => f.path).toList();
+                      final allPaths = displayedFiles.map((f) => f.path).toList();
                       if (action == 'selectAll') {
                         ref.read(selectedFilesProvider.notifier).selectAll(allPaths);
                       } else if (action == 'invertSelection') {
@@ -577,6 +579,14 @@ class HomeScreen extends ConsumerWidget {
                   ),
                 ),
                 actions: [
+                  IconButton(
+                    icon: const Icon(Icons.menu_rounded, size: 22),
+                    color: const Color(0xFFA1A1AA),
+                    tooltip: 'View & sort options',
+                    onPressed: () {
+                      ViewOptionsPopup.show(context);
+                    },
+                  ),
                   IconButton(
                     icon: const Icon(Icons.search_rounded, size: 20),
                     color: const Color(0xFFA1A1AA),

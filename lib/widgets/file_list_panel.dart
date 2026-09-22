@@ -4,6 +4,7 @@ import '../models/file_item.dart';
 import '../services/file_service.dart';
 import '../state/app_state.dart';
 import '../state/operation_state.dart';
+import '../state/view_options_state.dart';
 import 'package:path/path.dart' as p;
 import 'extract_destination_dialog.dart';
 import 'item_info_sheet.dart';
@@ -547,12 +548,418 @@ class FileListPanel extends ConsumerWidget {
       ),
     );
   }
+  Widget _buildItemPopupMenu(BuildContext context, WidgetRef ref, FileItem file) {
+    final isZip = file.name.toLowerCase().endsWith('.zip');
+    return PopupMenuButton<String>(
+      icon: const Icon(
+        Icons.more_vert_rounded,
+        size: 18,
+        color: Color(0xFF71717A),
+      ),
+      color: const Color(0xFF1E1E24),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+      ),
+      onSelected: (action) {
+        if (action == 'copy') {
+          ref.read(clipboardProvider.notifier).copy([file.path]);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Copied "${file.name}" to clipboard'),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        } else if (action == 'cut') {
+          ref.read(clipboardProvider.notifier).cut([file.path]);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Cut "${file.name}" to clipboard'),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        } else if (action == 'rename') {
+          _showRenameDialog(context, ref, file);
+        } else if (action == 'delete') {
+          _showDeleteDialog(context, ref, [file.path]);
+        } else if (action == 'select') {
+          ref.read(selectedFilesProvider.notifier).toggle(file.path);
+        } else if (action == 'info') {
+          ItemInfoSheet.show(context, [file.path]);
+        } else if (action == 'extract') {
+          final currentDir = ref.read(currentPathProvider) ?? p.dirname(file.path);
+          ExtractDestinationDialog.show(
+            context,
+            ref,
+            zipPath: file.path,
+            currentDirectory: currentDir,
+          );
+        }
+      },
+      itemBuilder: (context) => [
+        if (isZip)
+          const PopupMenuItem(
+            value: 'extract',
+            height: 36,
+            child: Row(
+              children: [
+                Icon(Icons.folder_zip_outlined, size: 16, color: Color(0xFFFFA726)),
+                SizedBox(width: 8),
+                Text('Extract ZIP', style: TextStyle(color: Color(0xFFEDEDED), fontSize: 13)),
+              ],
+            ),
+          ),
+        const PopupMenuItem(
+          value: 'select',
+          height: 36,
+          child: Row(
+            children: [
+              Icon(Icons.check_box_outlined, size: 16, color: Color(0xFFA1A1AA)),
+              SizedBox(width: 8),
+              Text('Select', style: TextStyle(color: Color(0xFFEDEDED), fontSize: 13)),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'info',
+          height: 36,
+          child: Row(
+            children: [
+              Icon(Icons.info_outline_rounded, size: 16, color: Color(0xFF8BC34A)),
+              SizedBox(width: 8),
+              Text('Details', style: TextStyle(color: Color(0xFFEDEDED), fontSize: 13)),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'copy',
+          height: 36,
+          child: Row(
+            children: [
+              Icon(Icons.copy_rounded, size: 16, color: Color(0xFFA1A1AA)),
+              SizedBox(width: 8),
+              Text('Copy', style: TextStyle(color: Color(0xFFEDEDED), fontSize: 13)),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'cut',
+          height: 36,
+          child: Row(
+            children: [
+              Icon(Icons.content_cut_rounded, size: 16, color: Color(0xFFA1A1AA)),
+              SizedBox(width: 8),
+              Text('Cut', style: TextStyle(color: Color(0xFFEDEDED), fontSize: 13)),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'rename',
+          height: 36,
+          child: Row(
+            children: [
+              Icon(Icons.edit_outlined, size: 16, color: Color(0xFFA1A1AA)),
+              SizedBox(width: 8),
+              Text('Rename', style: TextStyle(color: Color(0xFFEDEDED), fontSize: 13)),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'delete',
+          height: 36,
+          child: Row(
+            children: [
+              Icon(Icons.delete_outline_rounded, size: 16, color: Color(0xFFEF4444)),
+              SizedBox(width: 8),
+              Text('Delete', style: TextStyle(color: Color(0xFFEF4444), fontSize: 13)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _handleItemTap(BuildContext context, WidgetRef ref, FileItem file, bool isSelectionMode) {
+    if (isSelectionMode) {
+      ref.read(selectedFilesProvider.notifier).toggle(file.path);
+    } else {
+      if (file.isDirectory) {
+        ref.read(currentPathProvider.notifier).setPath(file.path);
+      } else if (file.name.toLowerCase().endsWith('.zip')) {
+        final currentDir = ref.read(currentPathProvider) ?? p.dirname(file.path);
+        ExtractDestinationDialog.show(
+          context,
+          ref,
+          zipPath: file.path,
+          currentDirectory: currentDir,
+        );
+      }
+    }
+  }
+
+  Widget _buildDetailedView(
+    BuildContext context,
+    WidgetRef ref,
+    List<FileItem> files,
+    Set<String> selectedFiles,
+    bool isSelectionMode,
+  ) {
+    return ListView.separated(
+      itemCount: files.length,
+      separatorBuilder: (context, index) => const Divider(
+        height: 1,
+        thickness: 1,
+        color: Color(0xFF232328),
+      ),
+      itemBuilder: (context, index) {
+        final file = files[index];
+        final isSelected = selectedFiles.contains(file.path);
+
+        return Material(
+          color: isSelected ? const Color(0xFF2A2D3D) : Colors.transparent,
+          child: ListTile(
+            dense: true,
+            visualDensity: const VisualDensity(vertical: -1),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+            leading: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (isSelectionMode)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Icon(
+                      isSelected
+                          ? Icons.check_circle_rounded
+                          : Icons.radio_button_unchecked_rounded,
+                      size: 18,
+                      color: isSelected
+                          ? const Color(0xFF3B82F6)
+                          : const Color(0xFF71717A),
+                    ),
+                  ),
+                Icon(
+                  _getFileIcon(file.type),
+                  color: _getIconColor(file.type),
+                  size: 24,
+                ),
+              ],
+            ),
+            title: Text(
+              file.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFFEDEDED),
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            subtitle: _FileItemSubtitle(file: file),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  file.size,
+                  style: const TextStyle(
+                    color: Color(0xFFA1A1AA),
+                    fontSize: 11,
+                  ),
+                ),
+                if (!isSelectionMode) _buildItemPopupMenu(context, ref, file),
+              ],
+            ),
+            onTap: () => _handleItemTap(context, ref, file, isSelectionMode),
+            onLongPress: () => ref.read(selectedFilesProvider.notifier).toggle(file.path),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCompactView(
+    BuildContext context,
+    WidgetRef ref,
+    List<FileItem> files,
+    Set<String> selectedFiles,
+    bool isSelectionMode,
+  ) {
+    return ListView.separated(
+      itemCount: files.length,
+      separatorBuilder: (context, index) => const Divider(
+        height: 1,
+        thickness: 1,
+        color: Color(0xFF202024),
+      ),
+      itemBuilder: (context, index) {
+        final file = files[index];
+        final isSelected = selectedFiles.contains(file.path);
+
+        return Material(
+          color: isSelected ? const Color(0xFF2A2D3D) : Colors.transparent,
+          child: ListTile(
+            dense: true,
+            visualDensity: const VisualDensity(vertical: -4),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+            leading: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (isSelectionMode)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: Icon(
+                      isSelected
+                          ? Icons.check_circle_rounded
+                          : Icons.radio_button_unchecked_rounded,
+                      size: 16,
+                      color: isSelected
+                          ? const Color(0xFF3B82F6)
+                          : const Color(0xFF71717A),
+                    ),
+                  ),
+                Icon(
+                  _getFileIcon(file.type),
+                  color: _getIconColor(file.type),
+                  size: 20,
+                ),
+              ],
+            ),
+            title: Text(
+              file.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFFEDEDED),
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (!file.isDirectory)
+                  Text(
+                    file.size,
+                    style: const TextStyle(
+                      color: Color(0xFF71717A),
+                      fontSize: 10.5,
+                    ),
+                  ),
+                if (!isSelectionMode) _buildItemPopupMenu(context, ref, file),
+              ],
+            ),
+            onTap: () => _handleItemTap(context, ref, file, isSelectionMode),
+            onLongPress: () => ref.read(selectedFilesProvider.notifier).toggle(file.path),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildGridView(
+    BuildContext context,
+    WidgetRef ref,
+    List<FileItem> files,
+    Set<String> selectedFiles,
+    bool isSelectionMode,
+  ) {
+    return GridView.builder(
+      padding: const EdgeInsets.all(10),
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 110,
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
+        childAspectRatio: 0.85,
+      ),
+      itemCount: files.length,
+      itemBuilder: (context, index) {
+        final file = files[index];
+        final isSelected = selectedFiles.contains(file.path);
+
+        return Material(
+          color: isSelected ? const Color(0xFF2A2D3D) : const Color(0xFF1B1B20),
+          borderRadius: BorderRadius.circular(8),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () => _handleItemTap(context, ref, file, isSelectionMode),
+            onLongPress: () => ref.read(selectedFilesProvider.notifier).toggle(file.path),
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: isSelected
+                      ? const Color(0xFF3B82F6)
+                      : const Color(0xFF27272E),
+                  width: 1,
+                ),
+              ),
+              padding: const EdgeInsets.all(6),
+              child: Stack(
+                children: [
+                  Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const SizedBox(height: 6),
+                        Icon(
+                          _getFileIcon(file.type),
+                          color: _getIconColor(file.type),
+                          size: 38,
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          file.name,
+                          maxLines: 2,
+                          textAlign: TextAlign.center,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFFEDEDED),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (isSelectionMode)
+                    Positioned(
+                      top: 0,
+                      right: 0,
+                      child: Icon(
+                        isSelected
+                            ? Icons.check_circle_rounded
+                            : Icons.radio_button_unchecked_rounded,
+                        size: 16,
+                        color: isSelected
+                            ? const Color(0xFF3B82F6)
+                            : const Color(0xFF71717A),
+                      ),
+                    )
+                  else
+                    Positioned(
+                      top: -4,
+                      right: -4,
+                      child: SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: _buildItemPopupMenu(context, ref, file),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(fileListNotifierProvider);
     final selectedFiles = ref.watch(selectedFilesProvider);
     final isSelectionMode = selectedFiles.isNotEmpty;
     final currentPath = ref.watch(currentPathProvider);
+    final displayedFiles = ref.watch(sortedFilteredFilesProvider);
+    final viewOptions = ref.watch(viewOptionsProvider);
     final showFab = !isSelectionMode && !state.requiresShizuku && currentPath != null;
 
     Widget mainContent;
@@ -655,22 +1062,23 @@ class FileListPanel extends ConsumerWidget {
           ),
         ),
       );
-    } else if (state.files.isEmpty) {
+    } else if (displayedFiles.isEmpty) {
+      final isFilteredEmpty = state.files.isNotEmpty;
       mainContent = Material(
         color: const Color(0xFF18181B),
         child: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(
-                Icons.folder_open_rounded,
+              Icon(
+                isFilteredEmpty ? Icons.visibility_off_rounded : Icons.folder_open_rounded,
                 size: 40,
-                color: Color(0xFF3F3F46),
+                color: const Color(0xFF3F3F46),
               ),
               const SizedBox(height: 12),
-              const Text(
-                'Folder is empty',
-                style: TextStyle(
+              Text(
+                isFilteredEmpty ? 'All items in this folder are hidden' : 'Folder is empty',
+                style: const TextStyle(
                   color: Color(0xFF71717A),
                   fontSize: 13,
                 ),
@@ -689,6 +1097,37 @@ class FileListPanel extends ConsumerWidget {
         ),
       );
     } else {
+      Widget listViewWidget;
+      switch (viewOptions.viewType) {
+        case ViewType.detailed:
+          listViewWidget = _buildDetailedView(
+            context,
+            ref,
+            displayedFiles,
+            selectedFiles,
+            isSelectionMode,
+          );
+          break;
+        case ViewType.compact:
+          listViewWidget = _buildCompactView(
+            context,
+            ref,
+            displayedFiles,
+            selectedFiles,
+            isSelectionMode,
+          );
+          break;
+        case ViewType.grid:
+          listViewWidget = _buildGridView(
+            context,
+            ref,
+            displayedFiles,
+            selectedFiles,
+            isSelectionMode,
+          );
+          break;
+      }
+
       mainContent = Material(
         color: const Color(0xFF18181B),
         child: RefreshIndicator(
@@ -698,223 +1137,7 @@ class FileListPanel extends ConsumerWidget {
             FileService.invalidateFolderItemCount();
             await ref.read(fileListNotifierProvider.notifier).loadFiles();
           },
-          child: ListView.separated(
-            itemCount: state.files.length,
-            separatorBuilder: (context, index) => const Divider(
-              height: 1,
-              thickness: 1,
-              color: Color(0xFF232328),
-            ),
-            itemBuilder: (context, index) {
-              final file = state.files[index];
-              final isSelected = selectedFiles.contains(file.path);
-
-              return Material(
-                color: isSelected ? const Color(0xFF2A2D3D) : Colors.transparent,
-                child: ListTile(
-                  dense: true,
-                  visualDensity: const VisualDensity(vertical: -1),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-                  leading: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (isSelectionMode)
-                        Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: Icon(
-                            isSelected
-                                ? Icons.check_circle_rounded
-                                : Icons.radio_button_unchecked_rounded,
-                            size: 18,
-                            color: isSelected
-                                ? const Color(0xFF3B82F6)
-                                : const Color(0xFF71717A),
-                          ),
-                        ),
-                      Icon(
-                        _getFileIcon(file.type),
-                        color: _getIconColor(file.type),
-                        size: 24,
-                      ),
-                    ],
-                  ),
-                  title: Text(
-                    file.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xFFEDEDED),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  subtitle: _FileItemSubtitle(file: file),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        file.size,
-                        style: const TextStyle(
-                          color: Color(0xFFA1A1AA),
-                          fontSize: 11,
-                        ),
-                      ),
-                      if (!isSelectionMode)
-                        PopupMenuButton<String>(
-                          icon: const Icon(
-                            Icons.more_vert_rounded,
-                            size: 18,
-                            color: Color(0xFF71717A),
-                          ),
-                          color: const Color(0xFF1E1E24),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          onSelected: (action) {
-                            if (action == 'copy') {
-                              ref.read(clipboardProvider.notifier).copy([file.path]);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Copied "${file.name}" to clipboard'),
-                                  duration: const Duration(seconds: 2),
-                                ),
-                              );
-                            } else if (action == 'cut') {
-                              ref.read(clipboardProvider.notifier).cut([file.path]);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Cut "${file.name}" to clipboard'),
-                                  duration: const Duration(seconds: 2),
-                                ),
-                              );
-                            } else if (action == 'rename') {
-                              _showRenameDialog(context, ref, file);
-                            } else if (action == 'delete') {
-                              _showDeleteDialog(context, ref, [file.path]);
-                            } else if (action == 'select') {
-                              ref.read(selectedFilesProvider.notifier).toggle(file.path);
-                            } else if (action == 'info') {
-                              ItemInfoSheet.show(context, [file.path]);
-                            } else if (action == 'extract') {
-                              final currentDir = ref.read(currentPathProvider) ?? p.dirname(file.path);
-                              ExtractDestinationDialog.show(
-                                context,
-                                ref,
-                                zipPath: file.path,
-                                currentDirectory: currentDir,
-                              );
-                            }
-                          },
-                          itemBuilder: (context) {
-                            final isZip = file.name.toLowerCase().endsWith('.zip');
-                            return [
-                              if (isZip)
-                                const PopupMenuItem(
-                                  value: 'extract',
-                                  height: 36,
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.folder_zip_outlined, size: 16, color: Color(0xFFFFA726)),
-                                      SizedBox(width: 8),
-                                      Text('Extract ZIP', style: TextStyle(color: Color(0xFFEDEDED), fontSize: 13)),
-                                    ],
-                                  ),
-                                ),
-                              const PopupMenuItem(
-                                value: 'select',
-                                height: 36,
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.check_box_outlined, size: 16, color: Color(0xFFA1A1AA)),
-                                    SizedBox(width: 8),
-                                    Text('Select', style: TextStyle(color: Color(0xFFEDEDED), fontSize: 13)),
-                                  ],
-                                ),
-                              ),
-                              const PopupMenuItem(
-                                value: 'info',
-                                height: 36,
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.info_outline_rounded, size: 16, color: Color(0xFF8BC34A)),
-                                    SizedBox(width: 8),
-                                    Text('Details', style: TextStyle(color: Color(0xFFEDEDED), fontSize: 13)),
-                                  ],
-                                ),
-                              ),
-                              const PopupMenuItem(
-                                value: 'copy',
-                                height: 36,
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.copy_rounded, size: 16, color: Color(0xFFA1A1AA)),
-                                    SizedBox(width: 8),
-                                    Text('Copy', style: TextStyle(color: Color(0xFFEDEDED), fontSize: 13)),
-                                  ],
-                                ),
-                              ),
-                              const PopupMenuItem(
-                                value: 'cut',
-                                height: 36,
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.content_cut_rounded, size: 16, color: Color(0xFFA1A1AA)),
-                                    SizedBox(width: 8),
-                                    Text('Cut', style: TextStyle(color: Color(0xFFEDEDED), fontSize: 13)),
-                                  ],
-                                ),
-                              ),
-                              const PopupMenuItem(
-                                value: 'rename',
-                                height: 36,
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.edit_outlined, size: 16, color: Color(0xFFA1A1AA)),
-                                    SizedBox(width: 8),
-                                    Text('Rename', style: TextStyle(color: Color(0xFFEDEDED), fontSize: 13)),
-                                  ],
-                                ),
-                              ),
-                              const PopupMenuItem(
-                                value: 'delete',
-                                height: 36,
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.delete_outline_rounded, size: 16, color: Color(0xFFEF4444)),
-                                    SizedBox(width: 8),
-                                    Text('Delete', style: TextStyle(color: Color(0xFFEF4444), fontSize: 13)),
-                                  ],
-                                ),
-                              ),
-                            ];
-                          },
-                        ),
-                    ],
-                  ),
-                  onTap: () {
-                    if (isSelectionMode) {
-                      ref.read(selectedFilesProvider.notifier).toggle(file.path);
-                    } else {
-                      if (file.isDirectory) {
-                        ref.read(currentPathProvider.notifier).setPath(file.path);
-                      } else if (file.name.toLowerCase().endsWith('.zip')) {
-                        final currentDir = ref.read(currentPathProvider) ?? p.dirname(file.path);
-                        ExtractDestinationDialog.show(
-                          context,
-                          ref,
-                          zipPath: file.path,
-                          currentDirectory: currentDir,
-                        );
-                      }
-                    }
-                  },
-                  onLongPress: () {
-                    ref.read(selectedFilesProvider.notifier).toggle(file.path);
-                  },
-                ),
-              );
-            },
-          ),
+          child: listViewWidget,
         ),
       );
     }

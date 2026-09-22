@@ -13,7 +13,8 @@ Flutter Android file manager + ZArchiver-style archiver + terminal/Termux. Split
 - Phase 3C (select all/clear/invert, ZIP compression, batch extraction): done, tested on Windows
 - Bugfix: compress-to-ZIP with an existing name showed a "Replace" option and deleted the original ZIP; fixed to use Keep both/Skip (no Replace) and write-then-rename so the original is never lost. Fixed and confirmed.
 - Phase 3D: 3D-1, 3D-2, 3D-3 (async folder item counts + cache) done, tested on Windows
-- Next: Phase 3E, 3F, 3G (below), then Search, Phase 4 (Shizuku), Phase 5 (terminal + Termux), Settings last, Phase 6 optional
+- Phase 3E ("View type" popup, Detailed/Compact/Grid, live sort & hidden files, SharedPreferences persistence): done
+- Next: Phase 3F, 3G (below), then Search, Phase 4 (Shizuku), Phase 5 (terminal + Termux), Settings last, Phase 6 optional
 
 ## Phase 3D (creation, item info, folder counts)
 - 3D-1: floating "+" button: New folder, New file (any name/extension), New empty ZIP. (Done)
