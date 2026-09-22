@@ -695,6 +695,7 @@ class FileListPanel extends ConsumerWidget {
           backgroundColor: const Color(0xFF222226),
           color: const Color(0xFF3B82F6),
           onRefresh: () async {
+            FileService.invalidateFolderItemCount();
             await ref.read(fileListNotifierProvider.notifier).loadFiles();
           },
           child: ListView.separated(
@@ -747,13 +748,7 @@ class FileListPanel extends ConsumerWidget {
                       fontWeight: FontWeight.w500,
                     ),
                   ),
-                  subtitle: Text(
-                    file.dateModified,
-                    style: const TextStyle(
-                      color: Color(0xFF71717A),
-                      fontSize: 11,
-                    ),
-                  ),
+                  subtitle: _FileItemSubtitle(file: file),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -937,3 +932,98 @@ class FileListPanel extends ConsumerWidget {
     );
   }
 }
+
+class _FileItemSubtitle extends StatefulWidget {
+  final FileItem file;
+
+  const _FileItemSubtitle({required this.file});
+
+  @override
+  State<_FileItemSubtitle> createState() => _FileItemSubtitleState();
+}
+
+class _FileItemSubtitleState extends State<_FileItemSubtitle> {
+  int? _itemCount;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCount();
+  }
+
+  @override
+  void didUpdateWidget(covariant _FileItemSubtitle oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.file.path != widget.file.path ||
+        oldWidget.file.isDirectory != widget.file.isDirectory ||
+        oldWidget.file.modifiedTime != widget.file.modifiedTime) {
+      _loadCount();
+    }
+  }
+
+  void _loadCount() {
+    if (!widget.file.isDirectory) {
+      _itemCount = null;
+      _isLoading = false;
+      return;
+    }
+
+    final cached = FileService.getCachedFolderItemCount(widget.file.path);
+    if (cached != null) {
+      _itemCount = cached;
+      _isLoading = false;
+      return;
+    }
+
+    _itemCount = null;
+    _isLoading = true;
+    FileService.getFolderItemCount(widget.file.path).then((count) {
+      if (mounted) {
+        setState(() {
+          _itemCount = count;
+          _isLoading = false;
+        });
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.file.isDirectory) {
+      return Text(
+        widget.file.dateModified,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: Color(0xFF71717A),
+          fontSize: 11,
+        ),
+      );
+    }
+
+    String countText;
+    if (_isLoading) {
+      countText = '...';
+    } else if (_itemCount != null) {
+      countText = _itemCount == 1 ? '1 item' : '$_itemCount items';
+    } else {
+      countText = '';
+    }
+
+    final displayText = countText.isNotEmpty
+        ? '${widget.file.dateModified}  •  $countText'
+        : widget.file.dateModified;
+
+    return Text(
+      displayText,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(
+        color: Color(0xFF71717A),
+        fontSize: 11,
+      ),
+    );
+  }
+}
+

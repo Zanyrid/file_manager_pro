@@ -12,13 +12,13 @@ Flutter Android file manager + ZArchiver-style archiver + terminal/Termux. Split
 - Phase 3B (ZIP extraction): done, tested on Windows
 - Phase 3C (select all/clear/invert, ZIP compression, batch extraction): done, tested on Windows
 - Bugfix: compress-to-ZIP with an existing name showed a "Replace" option and deleted the original ZIP; fixed to use Keep both/Skip (no Replace) and write-then-rename so the original is never lost. Fixed and confirmed.
-- Phase 3D: 3D-1 done, 3D-2 (item info sheet + isolate folder stats) done, tested on Windows
-- Next: Phase 3D-3, then 3E, 3F, 3G (below), then Search, Phase 4 (Shizuku), Phase 5 (terminal + Termux), Settings last, Phase 6 optional
+- Phase 3D: 3D-1, 3D-2, 3D-3 (async folder item counts + cache) done, tested on Windows
+- Next: Phase 3E, 3F, 3G (below), then Search, Phase 4 (Shizuku), Phase 5 (terminal + Termux), Settings last, Phase 6 optional
 
-## Phase 3D (next) - creation, item info, folder counts
+## Phase 3D (creation, item info, folder counts)
 - 3D-1: floating "+" button: New folder, New file (any name/extension), New empty ZIP. (Done)
 - 3D-2: (i) button in selection bar: scrollable sheet, item cards with metadata, folder stats in isolate with cancel, copy path. (Done)
-- 3D-3: folders in the main list show "N items" next to the date (direct children only, async with cache, must not slow scrolling).
+- 3D-3: folders in the main list show "N items" next to the date (direct children only, async with cache, must not slow scrolling). (Done)
 
 ## Phase 3E (new) - "View type" popup
 Toolbar menu (☰) opens an overlay popup, dismissible by tapping outside, applies live with no OK button, persists to SharedPreferences.

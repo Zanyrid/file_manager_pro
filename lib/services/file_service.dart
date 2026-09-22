@@ -281,6 +281,9 @@ class FileService {
           await file.rename(newPath);
         }
       }
+      invalidateFolderItemCount(parent);
+      invalidateFolderItemCount(oldPath);
+      invalidateFolderItemCount(newPath);
     } on FileSystemException {
       rethrow;
     } catch (e) {
@@ -297,6 +300,8 @@ class FileService {
       final file = File(path);
       await file.delete();
     }
+    invalidateFolderItemCount(p.dirname(path));
+    invalidateFolderItemCount(path);
   }
 
   /// Deletes multiple files/directories.
@@ -361,6 +366,7 @@ class FileService {
     final targetPath = p.join(parentDirectory, trimmed);
     final dir = Directory(targetPath);
     await dir.create(recursive: false);
+    invalidateFolderItemCount(parentDirectory);
   }
 
   /// Creates a new empty file in [parentDirectory].
@@ -379,6 +385,7 @@ class FileService {
     final targetPath = p.join(parentDirectory, trimmed);
     final file = File(targetPath);
     await file.create(recursive: false);
+    invalidateFolderItemCount(parentDirectory);
   }
 
   /// Creates a new valid empty ZIP archive in [parentDirectory].
@@ -406,6 +413,7 @@ class FileService {
       final bytes = ZipEncoder().encode(archive);
       await tempFile.writeAsBytes(bytes);
       await tempFile.rename(targetPath);
+      invalidateFolderItemCount(parentDirectory);
       return trimmed;
     } catch (_) {
       if (await tempFile.exists()) {
@@ -687,6 +695,44 @@ class FileService {
     }
 
     return completer.future;
+  }
+
+  static final Map<String, int> _folderItemCountCache = {};
+
+  /// Retrieves the cached direct child item count for [folderPath], or null if not yet cached.
+  static int? getCachedFolderItemCount(String folderPath) {
+    return _folderItemCountCache[folderPath];
+  }
+
+  /// Clears the folder item count cache, or removes a specific entry if [folderPath] is given.
+  static void invalidateFolderItemCount([String? folderPath]) {
+    if (folderPath != null) {
+      _folderItemCountCache.remove(folderPath);
+    } else {
+      _folderItemCountCache.clear();
+    }
+  }
+
+  /// Calculates direct child item count (files + subfolders) asynchronously with caching.
+  static Future<int?> getFolderItemCount(String folderPath, {bool forceRefresh = false}) async {
+    if (!forceRefresh && _folderItemCountCache.containsKey(folderPath)) {
+      return _folderItemCountCache[folderPath];
+    }
+
+    try {
+      final dir = Directory(folderPath);
+      if (!await dir.exists()) {
+        return null;
+      }
+      int count = 0;
+      await for (final _ in dir.list(followLinks: false)) {
+        count++;
+      }
+      _folderItemCountCache[folderPath] = count;
+      return count;
+    } catch (_) {
+      return null;
+    }
   }
 }
 
