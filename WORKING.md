@@ -1,111 +1,108 @@
-# WORKING.md (project handoff)
+# WORKING.md - File Manager Pro (serah-terima proyek, versi detail)
 
-Last updated: 22 Sep 2026. Update "Status" after each phase, then commit and push.
+Terakhir diperbarui: 25 Sep 2026. Perbarui bagian "Status" setiap selesai satu fase/sub-fase, lalu commit dan push ke GitHub.
 
-## Project
-Flutter Android file manager + ZArchiver-style archiver + terminal/Termux. Split-screen: left bubble menu (no text), right file list that switches to a real-time terminal log during operations (black bg, green text, "Back to files" button when done). Shizuku for protected folders. Min SDK 26. State: Riverpod. ZIP: `archive` package in an Isolate. Green accent (#8BC34A) for active/selected states, otherwise dark/neutral, no gradients.
+## 1. Visi proyek
+Satu aplikasi Android yang menggabungkan tiga hal: file manager, pengarsip ala ZArchiver (ZIP dan format lain), dan terminal/Termux, dengan akses folder terproteksi lewat Shizuku.
+- Layout split-screen. Kiri: kolom bubble lingkaran tanpa teks (Root, Internal Storage, Android/data, Android/obb, Downloads, dst.). Kanan: daftar file.
+- Saat ada operasi panjang (copy, move, delete, extract, compress), panel kanan berubah jadi terminal log real-time (latar hitam, teks hijau, log ASLI dari operasi, bukan karangan). Setelah selesai ada tombol "Back to files".
+- Top bar: search, settings, ikon status Shizuku (merah/kuning/hijau), tombol terminal (popup terminal interaktif dan aksi "Buka di Termux").
+- Gaya: minimalis, gelap/netral, ringkas seperti alat teknis, tanpa gradien atau animasi berlebihan. Aksen hijau (#8BC34A) untuk state aktif/terpilih.
 
-## Status
-- Phase 1 (static UI): done
-- Phase 2 (real browsing, rename, delete): done, tested on Windows
-- Phase 3A (copy/move/delete + terminal log): done, tested on Windows
-- Phase 3B (ZIP extraction): done, tested on Windows
-- Phase 3C (select all/clear/invert, ZIP compression, batch extraction): done, tested on Windows
-- Bugfix: compress-to-ZIP with an existing name showed a "Replace" option and deleted the original ZIP; fixed to use Keep both/Skip (no Replace) and write-then-rename so the original is never lost. Fixed and confirmed.
-- Phase 3D: 3D-1, 3D-2, 3D-3 (async folder item counts + cache) done, tested on Windows
-- Phase 3E ("View type" popup, Detailed/Compact/Grid, live sort & hidden files, SharedPreferences persistence): done
-- Next: Phase 3F, 3G (below), then Search, Phase 4 (Shizuku), Phase 5 (terminal + Termux), Settings last, Phase 6 optional
+## 2. Teknologi dan keputusan
+- Flutter (Dart) + Kotlin native untuk bagian Android. Min SDK 26. Flutter 3.47.5, Dart 3.13.4.
+- State: Riverpod. ZIP: paket `archive` (streaming, di Isolate). Terminal UI: `xterm` (+ `flutter_pty` jika layak). Izin: `permission_handler`.
+- Log dari Kotlin ke Flutter: EventChannel. Panggilan biasa: MethodChannel.
+- Shizuku: API resmi lewat Kotlin, operasi berprivilege lewat Shizuku UserService (bukan perintah shell sekali jalan).
+- Struktur: Flutter UI -> layanan Dart -> Method/EventChannel -> Kotlin -> Shizuku UserService -> operasi file.
+- Struktur folder: lib/ main.dart, models/, services/ (file_service.dart, operation_service.dart), state/ (app_state.dart), screens/home_screen.dart, widgets/ (bubble_menu, file_list_panel, terminal_panel, conflict_dialog, create_archive_dialog).
 
-## Phase 3D (creation, item info, folder counts)
-- 3D-1: floating "+" button: New folder, New file (any name/extension), New empty ZIP. (Done)
-- 3D-2: (i) button in selection bar: scrollable sheet, item cards with metadata, folder stats in isolate with cancel, copy path. (Done)
-- 3D-3: folders in the main list show "N items" next to the date (direct children only, async with cache, must not slow scrolling). (Done)
+## 3. Lingkungan kerja
+- Komputer: Windows (RDP sementara, dihancurkan setelah sekitar 6 jam). Semua kode HARUS dibackup ke GitHub: repo `fauzan-ridani/file_manager_pro` (private).
+- Lokasi: Flutter `C:\src\flutter`, Android SDK `C:\AndroidStudioSDK` (atau `C:\Android\Sdk`), proyek `C:\file_manager_pro`, folder uji `C:\test_files`.
+- Diuji dengan `flutter run -d windows` (folder Windows asli). Tidak ada emulator Android. Shizuku, izin storage Android, Android/data, dan Termux HANYA bisa dites di HP Android asli.
+- IDE agen: Antigravity. Kuota model terbatas, pakai model ringan untuk tugas biasa, model kuat hanya untuk Fase 4.
+- Ada perbaikan build Windows di `windows/CMakeLists.txt`: `add_compile_definitions(_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS)` (untuk permission_handler + Visual Studio baru). Sudah ada di repo, jangan dihapus.
 
-## Phase 3E (new) - "View type" popup
-Toolbar menu (☰) opens an overlay popup, dismissible by tapping outside, applies live with no OK button, persists to SharedPreferences.
-- Row 1 "View type" (radio, green underline on active): Detailed (name+size+date list), Compact (name only, denser), Grid (thumbnails). Separate toggle at the end: "Hidden files" switch.
-- Row 2 "Sort" (radio): Name, Size, Date, Type. Separate toggle at the end: sort direction (ascending/descending), label flips.
+## 4. Status fase
+- Fase 1 (UI statis): selesai.
+- Fase 2 (browsing nyata, rename, hapus, seleksi, izin storage): selesai, lolos tes.
+- Fase 3A (copy/cut/paste/delete + terminal log + Cancel + konflik Replace/Skip/Keep both): selesai, lolos tes.
+- Fase 3B (ekstrak ZIP, zip-slip, ZIP rusak/palsu, cancel): selesai, lolos tes.
+- Fase 3C (select all/clear/invert, Compress to ZIP, ekstrak banyak ZIP): selesai, lolos tes.
+- Bugfix: compress ke ZIP dengan nama sudah ada dulu menampilkan opsi Replace dan menghapus ZIP lama sebelum yang baru selesai ditulis (file bisa hilang). Sudah diperbaiki: pakai Keep both/Skip (tanpa Replace), dan tulis ke file sementara baru rename setelah sukses. SELESAI, dikonfirmasi.
+- Fase 3D (tombol + New folder/File/ZIP, info detail (i), jumlah isi folder "N items"): selesai, lolos tes semua sub-fase (3D-1, 3D-2, 3D-3).
+- Fase 3E (popup "Jenis Tampilan": view mode/sort/hidden toggle, persist ke SharedPreferences): selesai, lolos tes.
+- Fase 3F (dialog "Buat Arsip", ZIP-only, opsi lain disabled "Coming soon"): selesai, perbaikan kompresi folder kosong, verifikasi ZIP andal, dan pembungkusan Material ListTile telah diterapkan.
+- BERIKUTNYA setelah 3F selesai: Fase 3G, lalu Search, Fase 4, Fase 5, Settings, Fase 6 (opsional).
 
-## Phase 3F (new) - "Create Archive" dialog (ZIP-only for now)
-Replaces the current simple "Compress to ZIP" flow. UI shows all fields from the original spec, but only ZIP + "No encryption" are functional; every other option is visibly present but disabled with a "Coming soon" label - never fake the function.
-- Name input (default from selection, e.g. archiveNew.zip) + "..." button to pick destination folder.
-- Format dropdown: zip (enabled), 7z/tar/tar.gz/tar.bz2/tar.xz/tar.lz4/tar.zstd (disabled, "Coming soon").
-- Compression level dropdown: None/Fastest/Fast/Normal/Maximum/Ultra (maps to the `archive` package's level options for zip).
-- Encryption dropdown (only shown for zip/7z): "None" enabled; ZipCrypto/AES-128/192/256 disabled ("Coming soon", pending koni_archive research below).
-- Password field with show/hide icon: stays disabled while encryption = None.
-- Split into volumes dropdown: all options disabled ("Coming soon", not supported yet).
-- Checkboxes: "Delete source files after compression" (enabled), "Create separate archives" (one archive per selected file, enabled).
-- Buttons: Cancel, OK. Same conflict helper as elsewhere - never silently overwrite.
+## 6. Rencana fase berikutnya (detail)
 
-## Phase 3G (new) - Archive Viewer (ZIP-only for now)
-Tapping a ZIP opens a new screen showing its contents without extracting.
-- Entry list: name, size, modified date. Folder navigation inside the archive (breadcrumb, back to parent).
-- Long-press enters multi-select mode with checkboxes.
-- Selection mode shows vertical FABs (green): Add file, Add folder, Cancel/close.
-- Selected existing entries: Copy (extract to another location), Delete (rebuild the archive without that entry, with progress indicator), Rename, Extract here, Extract to.
-- For any archive format this build cannot write to (anything but zip, once other formats are supported later) hide the write actions (Add/Delete) and only allow Copy/Extract.
+### Fase 3G - Archive Viewer (ZIP-only untuk sekarang)
+Tap file ZIP membuka layar baru menampilkan isinya tanpa ekstrak.
+- List entry: nama, ukuran, tanggal modifikasi. Navigasi folder di dalam arsip (breadcrumb, tombol back ke parent).
+- Long-press masuk mode seleksi (checkbox multi-select).
+- Mode seleksi menampilkan FAB vertikal (hijau): Add file, Add folder, Cancel/close.
+- Entry yang sudah ada di arsip, saat dipilih: Copy (ekstrak ke lokasi lain), Delete (rebuild arsip tanpa entry itu, dengan progress indicator), Rename, Extract here, Extract to.
+- Untuk format yang tidak bisa ditulis nanti (7z/rar sebelum didukung penuh): sembunyikan aksi tulis (Add/Delete), hanya izinkan Copy/Extract.
+- Pecah jadi beberapa prompt kecil saat dikerjakan (list+navigasi dulu, baru add, baru delete).
 
-## Research track (parallel, does not block phases 3D-3G)
-- Investigating the `koni_archive` package family (koni_zip, koni_sevenz, koni_rar, koni_codecs) which claims pure-Dart support for 7z/RAR/tar + AES encryption + no native/FFI needed.
-- Caution: very new (published ~1 month ago), unverified publisher, ~0-2 likes, ~200 downloads per package, no track record. Do NOT depend on it in file_manager_pro yet.
-- Test it in a separate throwaway Flutter project first: round-trip zip/7z/rar with real passwords, verify output opens correctly in real 7-Zip/WinRAR, before considering it for Phase 6.
+### Jalur riset terpisah (tidak menghalangi fase manapun)
+- Sedang menyelidiki paket `koni_archive` (koni_zip, koni_sevenz, koni_rar, koni_codecs) yang mengklaim dukungan murni-Dart untuk 7z/RAR/tar + enkripsi AES tanpa native/FFI.
+- HATI-HATI: paket sangat baru (~1 bulan), unverified publisher, ~0-2 likes, ~200 unduhan, belum ada rekam jejak. JANGAN dipakai di file_manager_pro dulu.
+- Uji di proyek Flutter percobaan terpisah dulu: round-trip zip/7z/rar dengan password asli, verifikasi hasilnya bisa dibuka di 7-Zip/WinRAR sungguhan, sebelum dipertimbangkan untuk Fase 6.
 
-## Search
-- Search by name in the active folder, optional recursive. Runs in an Isolate with progress + Cancel. Filters: extension, size, date. Results shown in the right panel (can jump to location). Search inside protected folders needs Shizuku (after Phase 4).
+### Search
+- Cari nama di folder aktif, opsi rekursif. Berjalan di Isolate, ada progress dan Cancel. Filter: ekstensi, ukuran, tanggal. Hasil di panel kanan (bisa dibuka lokasinya). Di folder terproteksi, pencarian lewat Shizuku baru setelah Fase 4.
 
-## Phase 4 - Shizuku (hardest, use a strong model, do it in small steps)
-- 4.1 Kotlin setup: `dev.rikka.shizuku:api` and `:provider` deps, `ShizukuProvider` in AndroidManifest.
-- 4.2 Status detection: installed (`moe.shizuku.privileged.api`, needs `<queries>` on Android 11+), service running (`pingBinder`), permission granted (`checkSelfPermission`). Binder received/dead listeners. Report status to Flutter; top-bar icon red/yellow/green.
-- 4.3 Permission flow: explanation dialog, `requestPermission`, handle denial and "don't ask again", handle binder death without crashing.
-- 4.4 UserService (AIDL): list, stat, rename, delete, mkdir, copy, move, read/write stream. Large data must NOT go through plain Binder (~1MB transaction limit) - use ParcelFileDescriptor/stream, send only progress.
-- 4.5 Flutter bridge: MethodChannel for commands, EventChannel for progress/log. `shizuku_service.dart` with the same interface as `file_service` so the UI doesn't care about the source.
-- 4.6 Integration: Android/data and Android/obb bubbles use Shizuku only when the normal API can't (Android 11+ restricts these). Fallback to normal API if Shizuku is absent. Never assume Shizuku is available.
-- 4.7 Honesty: Root (/) without real root is read-only in part. Use UserService, not `Shizuku.newProcess`. State manual test steps for anything untestable without a phone - never claim it works.
-- Manual test steps: install Shizuku, enable via wireless debugging, install debug APK, check each status icon, open Android/data, copy/rename/delete in a test folder, revoke permission and stop Shizuku to test fallback.
+### Fase 4 - Shizuku (paling sulit, pakai model kuat, kerjakan bertahap)
+- 4.1 Persiapan Kotlin: dependensi `dev.rikka.shizuku:api` dan `:provider`, deklarasi `ShizukuProvider` di AndroidManifest.
+- 4.2 Deteksi status: Shizuku terpasang (`moe.shizuku.privileged.api`, butuh `<queries>` di Android 11+), service berjalan (`pingBinder`), izin diberikan (`checkSelfPermission`). Listener binder received/dead. Kirim status ke Flutter, tampilkan di ikon top bar (merah/kuning/hijau).
+- 4.3 Alur izin: dialog penjelasan, `requestPermission`, tangani penolakan dan "jangan tanya lagi", tangani service mati tanpa crash.
+- 4.4 UserService (AIDL): list, stat, rename, delete, mkdir, copy, move, baca/tulis stream. Data besar TIDAK lewat Binder biasa (batas ~1 MB): pakai stream/ParcelFileDescriptor, kirim progress saja.
+- 4.5 Jembatan Flutter: MethodChannel untuk perintah, EventChannel untuk progress/log. `shizuku_service.dart` dengan antarmuka sama seperti `file_service` supaya UI tidak peduli sumbernya.
+- 4.6 Integrasi: bubble Android/data dan Android/obb pakai Shizuku hanya jika API biasa tidak bisa. Fallback ke API biasa bila Shizuku tidak ada. Jangan pernah mengasumsikan Shizuku tersedia.
+- 4.7 Batasan jujur: Root (/) tanpa root asli hanya baca sebagian. Pakai UserService, bukan `Shizuku.newProcess`. Fitur yang tidak bisa diuji tanpa HP: sebutkan langkah tes manual, jangan klaim sudah jalan.
 
-## Phase 5 - Interactive terminal and Termux
-- Terminal button in the top bar opens an interactive terminal popup/sheet (`xterm`). Working dir follows the active folder. Font size from Settings.
-- With Shizuku active: shell via UserService (stdin/stdout streamed). Without: an ordinary-privilege shell with a warning about limited access. Document limits if a real PTY isn't feasible.
-- "Open in Termux": intent `com.termux.RUN_COMMAND` (`com.termux.permission.RUN_COMMAND`), send command + WORKDIR. Check Termux installed (`<queries>` for `com.termux`) and `allow-external-apps=true` in `~/.termux/termux.properties`; show setup guidance if missing.
-- The interactive terminal is separate from the read-only operation-log panel; both stay.
+### Fase 5 - Terminal interaktif dan Termux
+- Tombol terminal di top bar membuka terminal interaktif (`xterm`). Folder kerja mengikuti folder aktif.
+- Jika Shizuku aktif: shell lewat UserService (stdin/stdout stream). Tanpa Shizuku: shell aplikasi biasa dengan peringatan hak akses terbatas.
+- "Buka di Termux": intent `com.termux.RUN_COMMAND`, cek Termux terpasang dan `allow-external-apps=true`.
+- Terminal interaktif berbeda dari panel log operasi (read-only). Keduanya tetap ada.
 
-## Settings (done last)
-Show hidden files, list order, terminal font size, log line limit (~5000), default extract destination, Shizuku status + permission button, Termux setup guide, theme/density.
+### Settings (dikerjakan terakhir)
+- Tampilkan file tersembunyi, urutan daftar, ukuran font terminal, batas baris log (~5000), folder tujuan ekstrak default, status Shizuku + tombol izin, panduan setup Termux, tema/kepadatan.
 
-## Phase 6 - Optional ZArchiver-style extras (feasibility not confirmed)
-- View archive contents without extracting for non-zip formats (7z, rar) - depends on the koni_archive research track above.
-- 7z/rar/tar.xz/tar.lz4/tar.zstd support in the Create Archive dialog and Archive Viewer, once koni_archive (or an alternative) is verified safe.
-- ZipCrypto/AES encryption, split volumes - same dependency.
-- Password-protected archives, partial extraction of entries.
+### Fase 6 - Opsional ala ZArchiver (belum dipastikan layak)
+- Dukungan 7z/rar/tar.xz/tar.lz4/tar.zstd, enkripsi ZipCrypto/AES, split volume di dialog Buat Arsip dan Archive Viewer — bergantung hasil riset `koni_archive` di atas.
+- Ekstrak sebagian entri saja, lihat arsip non-ZIP tanpa ekstrak.
 
-## Structure
-lib/ main.dart, models/, services/ (file_service, operation_service), state/, screens/home_screen.dart, widgets/ (bubble_menu, file_list_panel, terminal_panel, conflict_dialog)
+## 7. Aturan perilaku aplikasi (sudah diterapkan, jangan dilanggar)
+- Tidak pernah menimpa file diam-diam. Rename/create/copy memakai helper konflik nama di `file_service.dart`. Format nama salinan: `nama (1).ext`.
+- Copy di folder yang sama: hanya Keep both / Skip (tanpa Replace). Cut di folder yang sama: tidak melakukan apa-apa, tampilkan "Already in this folder".
+- Validasi nama: tidak kosong, tanpa `/ \ < > : " | ? *`, bukan hanya titik. Ganti huruf besar/kecil pada nama sama diperbolehkan.
+- Jangan pernah menghapus file asli sebelum file pengganti selesai ditulis dengan sukses (tulis ke file sementara, rename setelah sukses).
+- Status operasi: Done (hijau) hanya jika minimal satu item diproses dan tidak ada yang gagal. Nol diproses = "Nothing done" + alasan. Ada yang gagal = "Completed with errors". Selalu cetak ringkasan processed / skipped / failed.
+- Item yang dilewati/diabaikan harus dilaporkan (amber di log), tidak pernah diam.
+- Log: hijau normal, merah error, amber peringatan. Maksimal ~5000 baris. Cancel harus bersih (hapus file setengah jadi).
+- Snackbar: floating, 4 detik, `clearSnackBars()` sebelum tampil.
+- ZIP: perlindungan zip-slip, tangani ZIP rusak/palsu/terenkripsi, satu entri gagal tidak menghentikan yang lain. Folder (termasuk folder kosong dan bersarang) harus bisa dikompres dan diekstrak dengan struktur yang sama persis dengan aslinya.
+- Jangan pernah memalsukan fungsi. Kalau ada batasan format/library, tampilkan opsi UI-nya sebagai disabled berlabel "Coming soon", jangan berpura-pura berfungsi.
 
-## Rules for the agent
-- Project already exists, do NOT recreate it. Read this file first, then only files needed for the task. Do not scan the whole project.
-- Do not touch android/, ios/, web/, windows/, or tests unless the task says so (Phase 4-5 will touch android/).
-- Run flutter analyze once at the end and fix errors. Do not run flutter build or run the app.
-- Write files directly, no long planning. Update this file (max 3 lines). Reply format: "Changed: <files>. Analyze: <result>." Nothing else - no explanations, no plans, no code in the reply.
-- Never fake functionality. If a format/library limit exists, disable that option in the UI with a "Coming soon" label rather than pretending it works. Never claim Shizuku/Termux features work until tested on a real phone. Never fake terminal logs - log lines must come from the real operation.
+## 8. Aturan untuk agen (tempel di setiap prompt)
+- Proyek sudah ada, JANGAN dibuat ulang. Baca `WORKING.md` dulu (terutama bagian "Status fase" dan "Masalah aktif"), lalu hanya file yang diperlukan. Jangan scan seluruh proyek.
+- Jangan sentuh `android/`, `ios/`, `web/`, `windows/`, `test/` kecuali tugasnya memang meminta (Fase 4-5 akan menyentuh `android/`).
+- Jangan jalankan `flutter build` atau aplikasinya. Jalankan `flutter analyze` sekali di akhir dan perbaiki error.
+- Tulis file langsung, tanpa perencanaan panjang. Perbarui `WORKING.md` (maksimal 3 baris tambahan, jangan hapus riwayat lama). Balasan akhir maksimal 3-6 baris lalu BERHENTI menunggu konfirmasi.
+- Jangan pernah mengklaim fitur Shizuku/Termux sudah jalan sebelum dites di HP asli. Jangan pernah memalsukan log terminal — baris log harus dari operasi sungguhan.
 
-## App behavior rules (do not break)
-- Never overwrite silently. Reuse the name-conflict helper in file_service.dart. Copy name format: `name (1).ext`.
-- Copy in the same folder: only Keep both / Skip (no Replace). Cut in the same folder: do nothing, show "Already in this folder".
-- Name validation: not empty, no `/ \ < > : " | ? *`, not only dots. Changing only letter case on the same file is allowed.
-- Operation status: Done (green) only if at least one item processed and none failed. Zero processed = "Nothing done" + reason. Any failure = "Completed with errors". Always print processed / skipped / failed summary.
-- Skipped items must be reported (amber). Log colors: green normal, red error, amber warning. Max ~5000 log lines. Cancel must clean up partially written files.
-- Snackbar: floating, 4 seconds, clearSnackBars() before showing.
-- ZIP: zip-slip protection, handle corrupt/fake/encrypted ZIPs, one failed entry must not stop the others. Never delete an original file before its replacement is fully and successfully written (write to temp, rename on success).
+## 9. Alur kerja dan backup
+- Per (sub-)fase: jalankan prompt -> `flutter analyze` -> uji di Windows (`flutter run -d windows`, folder `C:\test_files`) -> laporkan per nomor tes -> prompt perbaikan singkat jika gagal -> backup.
+- Backup: `cd C:\file_manager_pro`, `git status` (pastikan tidak ada file uji nyasar), `git add .`, `git commit -m "..."`, `git push`.
+- Backup setiap selesai (sub-)fase. Kuota model tipis: pakai model ringan, minta revisi kecil dengan menyebut nama file.
+- Aplikasi mengoperasikan file Windows ASLI. Uji hanya di `C:\test_files`, pastikan file uji tidak masuk folder proyek.
 
-## Dev environment
-- Windows RDP (destroyed after ~6 hours). Back up to GitHub often. Repo: github.com/fauzan-ridani/file_manager_pro (private).
-- Paths: Flutter C:\src\flutter, project C:\file_manager_pro, test folder C:\test_files. Test with `flutter run -d windows`.
-- No Android emulator. Shizuku/Android storage/Android/data/Termux can only be tested on a real phone.
-- windows/CMakeLists.txt has add_compile_definitions(_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS) for permission_handler. Keep it.
-
-## Known issues / notes
-- Settings and Search buttons are placeholders.
-- Android/data and Android/obb bubbles show "Requires Shizuku (Phase 4)".
-- Root bubble icon looks similar to the Shizuku top-bar icon (cosmetic, fix later).
-- Flutter warning about ListTile inside ColoredBox (press-effect shadow): fix if it still appears.
-- Git warning "LF will be replaced by CRLF" is harmless.
+## 10. Masalah dan catatan lain yang diketahui
+- Search dan Settings masih placeholder.
+- Ikon bubble Root mirip ikon Shizuku di top bar (kosmetik, ganti nanti).
+- Warning Git "LF will be replaced by CRLF" tidak berbahaya.

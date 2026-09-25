@@ -173,6 +173,9 @@ class ZipService {
     required CancellationToken cancellationToken,
     required LogCallback onLog,
     required ProgressCallback onProgress,
+    int compressionLevel = 6,
+    bool deleteSourceFiles = false,
+    List<({List<String> sourcePaths, String outputZipPath})>? batchTasks,
   }) async {
     final receivePort = ReceivePort();
     final completer = Completer<OperationSummary>();
@@ -191,10 +194,18 @@ class ZipService {
           if (cancellationToken.isCancelled) {
             workerSendPort?.send({'type': 'cancel'});
           } else {
+            final tasksPayload = batchTasks?.map((t) => {
+              'sourcePaths': t.sourcePaths,
+              'outputZipPath': t.outputZipPath,
+            }).toList();
+
             workerSendPort?.send({
               'type': 'start',
               'sourcePaths': sourcePaths,
               'outputZipPath': outputZipPath,
+              'tasks': tasksPayload,
+              'compressionLevel': compressionLevel,
+              'deleteSourceFiles': deleteSourceFiles,
             });
           }
         } else if (type == 'log') {
@@ -669,12 +680,50 @@ void _compressWorker(SendPort mainSendPort) {
     });
   }
 
-  /// Recursively collects all files from a list of source paths.
-  /// Returns a list of (absolutePath, archiveRelativePath) pairs.
-  List<(String, String)> collectFiles(List<String> sourcePaths, String outputZipPath, [String? tempZipPath]) {
-    final result = <(String, String)>[];
+  /// Recursively collects all files and empty directories from a list of source paths.
+  /// Returns a list of (path, archivePath, isDirectory) records.
+  List<({String path, String archivePath, bool isDirectory})> collectFiles(
+    List<String> sourcePaths,
+    String outputZipPath, [
+    String? tempZipPath,
+    void Function(String, LogLevel)? sendLog,
+  ]) {
+    final result = <({String path, String archivePath, bool isDirectory})>[];
     final outputCanonical = p.canonicalize(outputZipPath);
     final tempCanonical = tempZipPath != null ? p.canonicalize(tempZipPath) : null;
+
+    void walkDirectory(Directory dir, String baseDir, String topLevelName) {
+      try {
+        final entities = dir.listSync(followLinks: false);
+        if (entities.isEmpty) {
+          // Empty directory entry
+          final relative = p.relative(dir.path, from: baseDir);
+          final entryPath = relative == '.'
+              ? '$topLevelName/'
+              : '${p.join(topLevelName, relative).replaceAll('\\', '/')}/';
+          result.add((path: dir.path, archivePath: entryPath, isDirectory: true));
+          return;
+        }
+
+        for (final entity in entities) {
+          try {
+            if (entity is File) {
+              final entityCanonical = p.canonicalize(entity.path);
+              if (entityCanonical == outputCanonical || entityCanonical == tempCanonical) continue;
+              final relative = p.relative(entity.path, from: baseDir);
+              final entryPath = p.join(topLevelName, relative).replaceAll('\\', '/');
+              result.add((path: entity.path, archivePath: entryPath, isDirectory: false));
+            } else if (entity is Directory) {
+              walkDirectory(entity, baseDir, topLevelName);
+            }
+          } catch (e) {
+            sendLog?.call('[WARNING] Skipping unreadable item "${entity.path}": $e', LogLevel.warning);
+          }
+        }
+      } catch (e) {
+        sendLog?.call('[WARNING] Skipping unreadable directory "${dir.path}": $e', LogLevel.warning);
+      }
+    }
 
     for (final srcPath in sourcePaths) {
       final srcCanonical = p.canonicalize(srcPath);
@@ -684,23 +733,11 @@ void _compressWorker(SendPort mainSendPort) {
         // Skip if this is the output zip itself or temp zip file
         if (srcCanonical == outputCanonical || srcCanonical == tempCanonical) continue;
         final baseName = p.basename(srcPath);
-        result.add((srcPath, baseName));
+        result.add((path: srcPath, archivePath: baseName, isDirectory: false));
       } else if (srcType == FileSystemEntityType.directory) {
         final dirName = p.basename(srcPath);
         final dir = Directory(srcPath);
-        try {
-          for (final entity in dir.listSync(recursive: true, followLinks: false)) {
-            if (entity is File) {
-              final entityCanonical = p.canonicalize(entity.path);
-              if (entityCanonical == outputCanonical || entityCanonical == tempCanonical) continue;
-              final relativePath = p.relative(entity.path, from: srcPath);
-              final archivePath = p.join(dirName, relativePath).replaceAll('\\', '/');
-              result.add((entity.path, archivePath));
-            }
-          }
-        } catch (e) {
-          // Directory read error; will be handled in the main loop
-        }
+        walkDirectory(dir, srcPath, dirName);
       }
     }
     return result;
@@ -712,22 +749,52 @@ void _compressWorker(SendPort mainSendPort) {
       if (type == 'cancel') {
         isCancelled = true;
       } else if (type == 'start') {
-        final sourcePaths = List<String>.from(message['sourcePaths'] as List);
-        final outputZipPath = message['outputZipPath'] as String;
-        final outputName = p.basename(outputZipPath);
-        final parentDir = p.dirname(outputZipPath);
-        final tempZipPath = p.join(
-          parentDir,
-          '.${p.basenameWithoutExtension(outputName)}_${DateTime.now().microsecondsSinceEpoch}.tmp.zip',
-        );
+        final rawTasks = message['tasks'] as List?;
+        final compressionLevel = (message['compressionLevel'] as int?) ?? 6;
+        final deleteSourceFiles = (message['deleteSourceFiles'] as bool?) ?? false;
 
-        sendLog('\$ compress ${sourcePaths.length} item(s) -> $outputName', LogLevel.command);
-        sendLog('> Collecting files...', LogLevel.info);
+        final List<({List<String> sourcePaths, String outputZipPath})> tasks;
+        if (rawTasks != null && rawTasks.isNotEmpty) {
+          tasks = rawTasks.map((t) {
+            final map = t as Map;
+            return (
+              sourcePaths: List<String>.from(map['sourcePaths'] as List),
+              outputZipPath: map['outputZipPath'] as String,
+            );
+          }).toList();
+        } else {
+          tasks = [(
+            sourcePaths: List<String>.from(message['sourcePaths'] as List),
+            outputZipPath: message['outputZipPath'] as String,
+          )];
+        }
 
-        // 1. Collect all files to compress
-        final filesToCompress = collectFiles(sourcePaths, outputZipPath, tempZipPath);
+        int totalSucceeded = 0;
+        int totalFailed = 0;
+        int totalFilesOverall = 0;
+        int globalBytesDone = 0;
+        int globalTotalBytes = 0;
 
-        if (filesToCompress.isEmpty) {
+        // First calculate total files & bytes across all tasks
+        final allTaskFiles = <List<({String path, String archivePath, bool isDirectory})>>[];
+        for (final task in tasks) {
+          final tempZipPath = p.join(
+            p.dirname(task.outputZipPath),
+            '.${p.basenameWithoutExtension(task.outputZipPath)}_${DateTime.now().microsecondsSinceEpoch}.tmp.zip',
+          );
+          final files = collectFiles(task.sourcePaths, task.outputZipPath, tempZipPath, sendLog);
+          allTaskFiles.add(files);
+          totalFilesOverall += files.length;
+          for (final entry in files) {
+            if (!entry.isDirectory) {
+              try {
+                globalTotalBytes += File(entry.path).lengthSync();
+              } catch (_) {}
+            }
+          }
+        }
+
+        if (totalFilesOverall == 0) {
           sendLog('[ERROR] No files found to compress.', LogLevel.error);
           mainSendPort.send({
             'type': 'done',
@@ -739,124 +806,206 @@ void _compressWorker(SendPort mainSendPort) {
           return;
         }
 
-        sendLog('> Found ${filesToCompress.length} file(s) to compress', LogLevel.info);
+        int overallFileIndex = 0;
 
-        // 2. Calculate total bytes
-        int totalBytes = 0;
-        for (final (filePath, _) in filesToCompress) {
-          try {
-            totalBytes += File(filePath).lengthSync();
-          } catch (_) {}
-        }
-
-        // 3. Create zip using streaming to a temporary file
-        int succeeded = 0;
-        int failed = 0;
-        int bytesDone = 0;
-        bool writeSuccess = false;
-
-        ZipFileEncoder? encoder;
-
-        try {
-          encoder = ZipFileEncoder();
-          encoder.create(tempZipPath);
-
-          for (int i = 0; i < filesToCompress.length; i++) {
-            if (isCancelled) {
-              sendLog('> Cancelled', LogLevel.warning);
-              break;
-            }
-
-            final (filePath, archiveName) = filesToCompress[i];
-            final fileName = p.basename(filePath);
-            int fileSize = 0;
-
-            try {
-              fileSize = File(filePath).lengthSync();
-            } catch (_) {}
-
-            final fileSizeFormatted = ZipService._formatBytes(fileSize);
-            sendLog('> Adding: $archiveName ($fileSizeFormatted)', LogLevel.info);
-
-            try {
-              encoder.addFile(File(filePath), archiveName);
-              succeeded++;
-              bytesDone += fileSize;
-            } catch (e) {
-              sendLog('[ERROR] Failed adding "$archiveName": $e', LogLevel.error);
-              failed++;
-            }
-
-            final progress = filesToCompress.isNotEmpty
-                ? ((i + 1) / filesToCompress.length).clamp(0.0, 1.0)
-                : 1.0;
-            final pct = (progress * 100).toInt();
-            sendLog('> Progress: $pct% (file ${i + 1}/${filesToCompress.length})', LogLevel.progress);
-            sendProgress(progress, fileName, bytesDone, totalBytes);
+        for (int t = 0; t < tasks.length; t++) {
+          if (isCancelled) {
+            sendLog('> Cancelled', LogLevel.warning);
+            break;
           }
 
-          encoder.close();
-          encoder = null;
+          final task = tasks[t];
+          final sourcePaths = task.sourcePaths;
+          final outputZipPath = task.outputZipPath;
+          final outputName = p.basename(outputZipPath);
+          final parentDir = p.dirname(outputZipPath);
+          final tempZipPath = p.join(
+            parentDir,
+            '.${p.basenameWithoutExtension(outputName)}_${DateTime.now().microsecondsSinceEpoch}.tmp.zip',
+          );
 
-          if (!isCancelled && succeeded > 0 && failed == 0) {
-            final tempFile = File(tempZipPath);
-            if (tempFile.existsSync()) {
-              try {
-                final targetFile = File(outputZipPath);
-                if (targetFile.existsSync()) {
-                  targetFile.deleteSync();
+          sendLog('\$ compress ${sourcePaths.length} item(s) -> $outputName', LogLevel.command);
+          final filesToCompress = allTaskFiles[t];
+
+          if (filesToCompress.isEmpty) {
+            sendLog('[ERROR] No files found for $outputName', LogLevel.error);
+            totalFailed++;
+            continue;
+          }
+
+          int taskSucceeded = 0;
+          int taskFailed = 0;
+          bool writeSuccess = false;
+          ZipFileEncoder? encoder;
+
+          try {
+            encoder = ZipFileEncoder();
+            encoder.create(tempZipPath, level: compressionLevel);
+
+            for (int i = 0; i < filesToCompress.length; i++) {
+              if (isCancelled) {
+                sendLog('> Cancelled', LogLevel.warning);
+                break;
+              }
+
+              final entry = filesToCompress[i];
+              if (entry.isDirectory) {
+                sendLog('> Adding folder: ${entry.archivePath}', LogLevel.info);
+                try {
+                  final dirEntryName = entry.archivePath.endsWith('/')
+                      ? entry.archivePath
+                      : '${entry.archivePath}/';
+                  final archiveFile = ArchiveFile(dirEntryName, 0, <int>[]);
+                  archiveFile.isFile = false;
+                  encoder.addArchiveFile(archiveFile);
+                  taskSucceeded++;
+                } catch (e) {
+                  sendLog('[ERROR] Failed adding folder "${entry.archivePath}": $e', LogLevel.error);
+                  taskFailed++;
                 }
-                tempFile.renameSync(outputZipPath);
-                writeSuccess = true;
-              } catch (e) {
-                sendLog('[ERROR] Failed to finalize ZIP archive: $e', LogLevel.error);
-                failed += succeeded;
-                succeeded = 0;
+              } else {
+                int fileSize = 0;
+
+                try {
+                  fileSize = File(entry.path).lengthSync();
+                } catch (_) {}
+
+                final fileSizeFormatted = ZipService._formatBytes(fileSize);
+                sendLog('> Adding: ${entry.archivePath} ($fileSizeFormatted)', LogLevel.info);
+
+                try {
+                  encoder.addFile(File(entry.path), entry.archivePath, compressionLevel);
+                  taskSucceeded++;
+                  globalBytesDone += fileSize;
+                } catch (e) {
+                  sendLog('[ERROR] Failed adding "${entry.archivePath}": $e', LogLevel.error);
+                  taskFailed++;
+                }
               }
-            } else {
-              sendLog('[ERROR] Temporary ZIP file was not created.', LogLevel.error);
-              failed += succeeded;
-              succeeded = 0;
+
+              overallFileIndex++;
+              final progress = totalFilesOverall > 0
+                  ? (overallFileIndex / totalFilesOverall).clamp(0.0, 1.0)
+                  : 1.0;
+              final pct = (progress * 100).toInt();
+              sendLog('> Progress: $pct% (item $overallFileIndex/$totalFilesOverall)', LogLevel.progress);
+              sendProgress(progress, p.basename(entry.path), globalBytesDone, globalTotalBytes);
             }
-          } else if (!isCancelled && failed > 0) {
-            sendLog('[ERROR] Compression completed with errors. Original destination left untouched.', LogLevel.error);
-          }
-        } catch (e) {
-          sendLog('[ERROR] ZIP creation error: $e', LogLevel.error);
-          try {
-            encoder?.close();
-          } catch (_) {}
-          failed += (filesToCompress.length - succeeded - failed);
-        } finally {
-          // Clean up temp file on any failure or cancellation
-          if (!writeSuccess) {
-            try {
-              final tmp = File(tempZipPath);
-              if (tmp.existsSync()) {
-                tmp.deleteSync();
+
+            encoder.close();
+            encoder = null;
+
+            if (!isCancelled && taskSucceeded > 0 && taskFailed == 0) {
+              final tempFile = File(tempZipPath);
+              if (tempFile.existsSync()) {
+                // Verify archive integrity by confirming file exists, valid size, and entry list is readable
+                bool isVerified = false;
+                try {
+                  final fileSize = tempFile.lengthSync();
+                  if (fileSize >= 22) {
+                    final bytes = tempFile.readAsBytesSync();
+                    final archive = ZipDecoder().decodeBytes(bytes, verify: false);
+                    final _ = archive.files;
+                    isVerified = true;
+                  } else {
+                    sendLog('[ERROR] Archive file size too small ($fileSize bytes).', LogLevel.error);
+                  }
+                } catch (e) {
+                  sendLog('[ERROR] Archive verification failed for "$outputName": $e', LogLevel.error);
+                  isVerified = false;
+                }
+
+                if (!isVerified) {
+                  sendLog('[ERROR] Created ZIP archive "$outputName" failed integrity verification.', LogLevel.error);
+                  taskFailed += taskSucceeded;
+                  totalFailed += taskSucceeded;
+                  taskSucceeded = 0;
+                } else {
+                  try {
+                    final targetFile = File(outputZipPath);
+                    if (targetFile.existsSync()) {
+                      targetFile.deleteSync();
+                    }
+                    tempFile.renameSync(outputZipPath);
+                    writeSuccess = true;
+                    totalSucceeded += taskSucceeded;
+                  } catch (e) {
+                    try {
+                      tempFile.copySync(outputZipPath);
+                      tempFile.deleteSync();
+                      writeSuccess = true;
+                      totalSucceeded += taskSucceeded;
+                    } catch (e2) {
+                      sendLog('[ERROR] Failed to finalize ZIP archive: $e2', LogLevel.error);
+                      taskFailed += taskSucceeded;
+                      totalFailed += taskSucceeded;
+                    }
+                  }
+                }
+              } else {
+                sendLog('[ERROR] Temporary ZIP file was not created.', LogLevel.error);
+                taskFailed += taskSucceeded;
+                totalFailed += taskSucceeded;
               }
+            } else if (!isCancelled && taskFailed > 0) {
+              totalFailed += taskFailed;
+              sendLog('[ERROR] Compression of $outputName completed with errors. Original destination left untouched.', LogLevel.error);
+            }
+          } catch (e) {
+            sendLog('[ERROR] ZIP creation error: $e', LogLevel.error);
+            try {
+              encoder?.close();
             } catch (_) {}
+            final unhandled = filesToCompress.length - taskSucceeded - taskFailed;
+            totalFailed += unhandled + taskFailed;
+          } finally {
+            if (!writeSuccess) {
+              try {
+                final tmp = File(tempZipPath);
+                if (tmp.existsSync()) {
+                  tmp.deleteSync();
+                }
+              } catch (_) {}
+            }
+          }
+
+          if (writeSuccess && taskSucceeded > 0) {
+            try {
+              final outSize = File(outputZipPath).lengthSync();
+              sendLog('> Created: $outputName (${ZipService._formatBytes(outSize)})', LogLevel.success);
+            } catch (_) {
+              sendLog('> Created: $outputName', LogLevel.success);
+            }
+
+            if (deleteSourceFiles) {
+              sendLog('> Deleting source files for $outputName...', LogLevel.info);
+              for (final srcPath in sourcePaths) {
+                try {
+                  final type = FileSystemEntity.typeSync(srcPath, followLinks: false);
+                  if (type == FileSystemEntityType.directory) {
+                    Directory(srcPath).deleteSync(recursive: true);
+                    sendLog('> Deleted folder: ${p.basename(srcPath)}', LogLevel.info);
+                  } else if (type == FileSystemEntityType.file) {
+                    File(srcPath).deleteSync();
+                    sendLog('> Deleted file: ${p.basename(srcPath)}', LogLevel.info);
+                  }
+                } catch (e) {
+                  sendLog('[ERROR] Failed to delete source "${p.basename(srcPath)}": $e', LogLevel.error);
+                }
+              }
+            }
           }
         }
 
-        // If cancelled, report
         if (isCancelled) {
           sendLog('> Partial ZIP removed.', LogLevel.warning);
-        } else if (writeSuccess && succeeded > 0) {
-          // Report output file size
-          try {
-            final outSize = File(outputZipPath).lengthSync();
-            sendLog('> Created: $outputName (${ZipService._formatBytes(outSize)})', LogLevel.success);
-          } catch (_) {
-            sendLog('> Created: $outputName', LogLevel.success);
-          }
         }
 
         final summary = OperationSummary(
-          total: filesToCompress.length,
-          succeeded: succeeded,
+          total: totalFilesOverall,
+          succeeded: totalSucceeded,
           skipped: 0,
-          failed: failed,
+          failed: totalFailed,
         );
 
         sendLog(

@@ -150,72 +150,81 @@ class ExtractDestinationDialog extends StatelessWidget {
 
             // Option 1: Extract here
             Consumer(
-              builder: (context, ref, _) => ListTile(
-                dense: true,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                leading: const Icon(Icons.folder_open_rounded, color: Color(0xFF38BDF8), size: 22),
-                title: const Text(
-                  'Extract here',
-                  style: TextStyle(color: Color(0xFFEDEDED), fontSize: 13, fontWeight: FontWeight.w500),
+              builder: (context, ref, _) => Material(
+                color: Colors.transparent,
+                child: ListTile(
+                  dense: true,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  leading: const Icon(Icons.folder_open_rounded, color: Color(0xFF38BDF8), size: 22),
+                  title: const Text(
+                    'Extract here',
+                    style: TextStyle(color: Color(0xFFEDEDED), fontSize: 13, fontWeight: FontWeight.w500),
+                  ),
+                  subtitle: Text(
+                    currentDirectory,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Color(0xFF71717A), fontSize: 11, fontFamily: 'monospace'),
+                  ),
+                  onTap: () {
+                    _onDestinationSelected(context, ref, currentDirectory);
+                  },
                 ),
-                subtitle: Text(
-                  currentDirectory,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Color(0xFF71717A), fontSize: 11, fontFamily: 'monospace'),
-                ),
-                onTap: () {
-                  _onDestinationSelected(context, ref, currentDirectory);
-                },
               ),
             ),
 
             // Option 2: Extract to folder named <zipname>
             Consumer(
-              builder: (context, ref, _) => ListTile(
-                dense: true,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                leading: const Icon(Icons.create_new_folder_outlined, color: Color(0xFF4ADE80), size: 22),
-                title: Text(
-                  'Extract to folder named "$zipBaseName"',
-                  style: const TextStyle(color: Color(0xFFEDEDED), fontSize: 13, fontWeight: FontWeight.w500),
+              builder: (context, ref, _) => Material(
+                color: Colors.transparent,
+                child: ListTile(
+                  dense: true,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  leading: const Icon(Icons.create_new_folder_outlined, color: Color(0xFF4ADE80), size: 22),
+                  title: Text(
+                    'Extract to folder named "$zipBaseName"',
+                    style: const TextStyle(color: Color(0xFFEDEDED), fontSize: 13, fontWeight: FontWeight.w500),
+                  ),
+                  subtitle: Text(
+                    subfolderDestination,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Color(0xFF71717A), fontSize: 11, fontFamily: 'monospace'),
+                  ),
+                  onTap: () {
+                    _onDestinationSelected(context, ref, subfolderDestination);
+                  },
                 ),
-                subtitle: Text(
-                  subfolderDestination,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Color(0xFF71717A), fontSize: 11, fontFamily: 'monospace'),
-                ),
-                onTap: () {
-                  _onDestinationSelected(context, ref, subfolderDestination);
-                },
               ),
             ),
 
             // Option 3: Choose folder
             Consumer(
-              builder: (context, ref, _) => ListTile(
-                dense: true,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                leading: const Icon(Icons.drive_file_move_outlined, color: Color(0xFFA78BFA), size: 22),
-                title: const Text(
-                  'Choose folder',
-                  style: TextStyle(color: Color(0xFFEDEDED), fontSize: 13, fontWeight: FontWeight.w500),
-                ),
-                subtitle: const Text(
-                  'Select a destination folder in file picker',
-                  style: TextStyle(color: Color(0xFF71717A), fontSize: 11),
-                ),
-                onTap: () async {
-                  final chosenFolder = await FolderPickerDialog.show(
-                    context,
-                    initialPath: currentDirectory,
-                  );
+              builder: (context, ref, _) => Material(
+                color: Colors.transparent,
+                child: ListTile(
+                  dense: true,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  leading: const Icon(Icons.drive_file_move_outlined, color: Color(0xFFA78BFA), size: 22),
+                  title: const Text(
+                    'Choose folder',
+                    style: TextStyle(color: Color(0xFFEDEDED), fontSize: 13, fontWeight: FontWeight.w500),
+                  ),
+                  subtitle: const Text(
+                    'Select a destination folder in file picker',
+                    style: TextStyle(color: Color(0xFF71717A), fontSize: 11),
+                  ),
+                  onTap: () async {
+                    final chosenFolder = await FolderPickerDialog.show(
+                      context,
+                      initialPath: currentDirectory,
+                    );
 
-                  if (chosenFolder != null && context.mounted) {
-                    await _onDestinationSelected(context, ref, chosenFolder);
-                  }
-                },
+                    if (chosenFolder != null && context.mounted) {
+                      await _onDestinationSelected(context, ref, chosenFolder);
+                    }
+                  },
+                ),
               ),
             ),
           ],

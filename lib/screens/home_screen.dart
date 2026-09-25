@@ -8,7 +8,7 @@ import '../state/app_state.dart';
 import '../state/operation_state.dart';
 import '../state/view_options_state.dart';
 import '../widgets/bubble_menu.dart';
-import '../widgets/conflict_dialog.dart';
+import '../widgets/create_archive_dialog.dart';
 import '../widgets/extract_destination_dialog.dart';
 import '../widgets/file_list_panel.dart';
 import '../widgets/item_info_sheet.dart';
@@ -139,172 +139,11 @@ class HomeScreen extends ConsumerWidget {
   }
 
   void _showCompressDialog(BuildContext context, WidgetRef ref, List<String> paths, String currentDir) {
-    // Default name: first item's name + ".zip"
-    final firstName = p.basenameWithoutExtension(paths.first);
-    final defaultName = paths.length == 1 ? '$firstName.zip' : '$firstName.zip';
-    final controller = TextEditingController(text: defaultName);
-    String? inlineError;
-    bool isProcessing = false;
-
-    showDialog(
-      context: context,
-      builder: (dialogCtx) {
-        return StatefulBuilder(
-          builder: (dialogContext, setDialogState) {
-            return AlertDialog(
-              backgroundColor: const Color(0xFF1E1E24),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              title: Row(
-                children: [
-                  const Icon(Icons.archive_rounded, color: Color(0xFF38BDF8), size: 22),
-                  const SizedBox(width: 8),
-                  const Expanded(
-                    child: Text(
-                      'Compress to ZIP',
-                      style: TextStyle(color: Color(0xFFEDEDED), fontSize: 16, fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                ],
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '${paths.length} item(s) selected',
-                    style: const TextStyle(color: Color(0xFFA1A1AA), fontSize: 12),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: controller,
-                    autofocus: true,
-                    style: const TextStyle(color: Colors.white, fontSize: 14),
-                    onChanged: (_) {
-                      if (inlineError != null) {
-                        setDialogState(() {
-                          inlineError = null;
-                        });
-                      }
-                    },
-                    decoration: InputDecoration(
-                      labelText: 'Output file name',
-                      labelStyle: const TextStyle(color: Color(0xFF71717A)),
-                      hintText: 'archive.zip',
-                      hintStyle: const TextStyle(color: Color(0xFF3F3F46)),
-                      errorText: inlineError,
-                      errorMaxLines: 2,
-                      enabledBorder: const UnderlineInputBorder(
-                        borderSide: BorderSide(color: Color(0xFF3F3F46)),
-                      ),
-                      focusedBorder: const UnderlineInputBorder(
-                        borderSide: BorderSide(color: Color(0xFF3B82F6)),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              actions: [
-                TextButton(
-                  onPressed: isProcessing ? null : () => Navigator.of(dialogCtx).pop(),
-                  child: const Text('Cancel', style: TextStyle(color: Color(0xFFA1A1AA))),
-                ),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF3B82F6),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  ),
-                  onPressed: isProcessing
-                      ? null
-                      : () async {
-                          String outputName = controller.text.trim();
-                          if (outputName.isEmpty) {
-                            setDialogState(() {
-                              inlineError = 'Name cannot be empty.';
-                            });
-                            return;
-                          }
-
-                          // Ensure .zip extension
-                          if (!outputName.toLowerCase().endsWith('.zip')) {
-                            outputName = '$outputName.zip';
-                          }
-
-                          // Validate file name
-                          final valErr = FileService.validateFileName(outputName);
-                          if (valErr != null) {
-                            setDialogState(() {
-                              inlineError = valErr;
-                            });
-                            return;
-                          }
-
-                          setDialogState(() {
-                            isProcessing = true;
-                            inlineError = null;
-                          });
-
-                          // Check for name conflict
-                          String outputZipPath = p.join(currentDir, outputName);
-                          final hasConflict = await FileService.checkNameConflict(currentDir, outputName);
-
-                          if (hasConflict && dialogCtx.mounted) {
-                            final res = await ConflictDialog.show(
-                              dialogCtx,
-                              sourcePath: outputName,
-                              targetPath: outputZipPath,
-                              isDirectory: false,
-                              hideReplace: true,
-                            );
-
-                            if (res == null) {
-                              // User cancelled
-                              if (dialogCtx.mounted) {
-                                setDialogState(() {
-                                  isProcessing = false;
-                                });
-                              }
-                              return;
-                            }
-
-                            if (res.action == ConflictAction.skip) {
-                              if (dialogCtx.mounted) {
-                                Navigator.of(dialogCtx).pop();
-                              }
-                              return;
-                            } else if (res.action == ConflictAction.keepBoth) {
-                              outputName = await FileService.generateNonConflictingName(currentDir, outputName);
-                              outputZipPath = p.join(currentDir, outputName);
-                            }
-                          }
-
-                          if (dialogCtx.mounted) {
-                            Navigator.of(dialogCtx).pop();
-                          }
-
-                          // Start compression
-                          ref.read(operationNotifierProvider.notifier).startCompressZip(
-                            sourcePaths: paths,
-                            outputZipPath: outputZipPath,
-                          );
-                        },
-                  child: isProcessing
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                          ),
-                        )
-                      : const Text('Compress'),
-                ),
-              ],
-            );
-          },
-        );
-      },
+    CreateArchiveDialog.show(
+      context,
+      ref,
+      paths: paths,
+      currentDirectory: currentDir,
     );
   }
 
@@ -453,11 +292,11 @@ class HomeScreen extends ConsumerWidget {
                   ),
                 ),
                 actions: [
-                  // Compress to ZIP
+                  // Create archive
                   IconButton(
                     icon: const Icon(Icons.archive_rounded, size: 20),
                     color: const Color(0xFF38BDF8),
-                    tooltip: 'Compress to ZIP',
+                    tooltip: 'Create archive',
                     onPressed: () {
                       final currentDir = currentPath ?? '';
                       if (currentDir.isEmpty) return;

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/operation_models.dart';
+import '../services/file_service.dart';
 import '../services/operation_service.dart';
 import '../services/zip_service.dart';
 import '../widgets/conflict_dialog.dart';
@@ -388,6 +389,9 @@ class OperationNotifier extends StateNotifier<OperationState> {
   Future<void> startCompressZip({
     required List<String> sourcePaths,
     required String outputZipPath,
+    int compressionLevel = 6,
+    bool deleteSourceFiles = false,
+    List<({List<String> sourcePaths, String outputZipPath})>? batchTasks,
   }) async {
     if (state.isRunning) return;
 
@@ -420,6 +424,9 @@ class OperationNotifier extends StateNotifier<OperationState> {
             totalBytes: totalBytes,
           );
         },
+        compressionLevel: compressionLevel,
+        deleteSourceFiles: deleteSourceFiles,
+        batchTasks: batchTasks,
       );
 
       final OperationStatus finalStatus;
@@ -438,6 +445,9 @@ class OperationNotifier extends StateNotifier<OperationState> {
       );
 
       _addLog(LogEntry('=== COMPRESSION FINISHED ===', level: LogLevel.info));
+
+      FileService.invalidateFolderItemCount();
+      ref.read(fileListNotifierProvider.notifier).loadFiles();
     } catch (e) {
       _addLog(LogEntry('[ERROR] Unhandled compression exception: $e', level: LogLevel.error));
       state = state.copyWith(

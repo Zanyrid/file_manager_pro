@@ -220,34 +220,37 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
                                 ),
                                 itemBuilder: (context, index) {
                                   final folder = _subfolders[index];
-                                  return ListTile(
-                                    dense: true,
-                                    visualDensity: const VisualDensity(vertical: -2),
-                                    leading: const Icon(
-                                      Icons.folder_rounded,
-                                      color: Color(0xFFFFCA28),
-                                      size: 20,
-                                    ),
-                                    title: Text(
-                                      folder.name,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: Color(0xFFEDEDED),
-                                        fontSize: 13,
+                                  return Material(
+                                    color: Colors.transparent,
+                                    child: ListTile(
+                                      dense: true,
+                                      visualDensity: const VisualDensity(vertical: -2),
+                                      leading: const Icon(
+                                        Icons.folder_rounded,
+                                        color: Color(0xFFFFCA28),
+                                        size: 20,
                                       ),
+                                      title: Text(
+                                        folder.name,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: Color(0xFFEDEDED),
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                      trailing: const Icon(
+                                        Icons.chevron_right_rounded,
+                                        color: Color(0xFF71717A),
+                                        size: 18,
+                                      ),
+                                      onTap: () {
+                                        setState(() {
+                                          _currentPath = folder.path;
+                                        });
+                                        _loadFolders();
+                                      },
                                     ),
-                                    trailing: const Icon(
-                                      Icons.chevron_right_rounded,
-                                      color: Color(0xFF71717A),
-                                      size: 18,
-                                    ),
-                                    onTap: () {
-                                      setState(() {
-                                        _currentPath = folder.path;
-                                      });
-                                      _loadFolders();
-                                    },
                                   );
                                 },
                               ),
